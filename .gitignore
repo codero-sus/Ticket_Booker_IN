@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+ENV/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Camoufox / browser profiles (contain live IRCTC sessions - NEVER commit)
+profiles/
+*.db
+*.sqlite*
+
+# Local config with real credentials - NEVER commit
+config.json
+config.yaml
+config.yml
+.env
+
+# Screenshots / debug artefacts
+screenshots/
+debug/
+*.png
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+*.swp

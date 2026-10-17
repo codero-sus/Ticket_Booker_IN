@@ -1,0 +1,89 @@
+{
+  "_comment": "Copy to config.json and fill in. NEVER commit config.json (it has credentials). See README for full docs.",
+  "irctc": {
+    "username": "YOUR_IRCTC_USERNAME",
+    "password": "YOUR_IRCTC_PASSWORD",
+    "mobile": "9876543210",
+    "email": "you@example.com"
+  },
+  "journey": {
+    "from_station": "NDLS",
+    "to_station": "CNB",
+    "date": "2026-10-20",
+    "train_no": "12430",
+    "class_code": "3A",
+    "quota": "TQ",
+    "flexible_date": false
+  },
+  "passengers": [
+    {
+      "name": "Rahul Sharma",
+      "age": 32,
+      "gender": "M",
+      "berth": "LB",
+      "food": "Veg"
+    },
+    {
+      "name": "Priya Sharma",
+      "age": 29,
+      "gender": "F",
+      "berth": "UB",
+      "food": "Veg"
+    }
+  ],
+  "preferences": {
+    "mobile": "9876543210",
+    "auto_upgrade": false,
+    "confirm_berths": true,
+    "travel_insurance": false,
+    "coach_preference": ""
+  },
+  "payment": {
+    "method": "manual",
+    "upi_id": "",
+    "wait_minutes": 10
+  },
+  "tatkal": {
+    "enabled": true,
+    "arrive_minutes_early": 15,
+    "refresh_interval_ms": 1200
+  },
+  "browser": {
+    "headless": false,
+    "humanize": true,
+    "profile_dir": "./profiles/irctc",
+    "locale": "en-IN",
+    "timezone": "Asia/Kolkata",
+    "geolocation": {
+      "latitude": 28.6139,
+      "longitude": 77.209
+    },
+    "proxy": null,
+    "block_images": false,
+    "addons": []
+  },
+  "captcha": {
+    "_comment": "Zero-touch chain: local OCR -> paid service. reCAPTCHA audio auto-solve is built in for gateways.",
+    "mode": "auto",
+    "max_attempts": 6,
+    "ocr": {
+      "enabled": true,
+      "psm_modes": [7, 8],
+      "min_confidence": 25.0,
+      "max_variants": 6
+    },
+    "recaptcha_audio": {
+      "enabled": true,
+      "language": "en",
+      "max_audio_attempts": 3
+    },
+    "service": {
+      "enabled": false,
+      "provider": "twocaptcha",
+      "api_key": "",
+      "poll_timeout": 120
+    },
+    "on_failure": "manual",
+    "debug_dir": "./screenshots/captcha"
+  }
+}

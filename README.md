@@ -1,2 +1,207 @@
-# Ticket_Booker_IN
-Automates ticket booking for IRTC, RailOne and moree.
+# Ticket_Booker_IN 🎫🇮🇳
+
+Automates Indian railway ticket booking (**IRCTC**, **RailOne** roadmap) using the
+[**Camoufox**](https://github.com/daijro/camoufox) stealth browser — with a
+**zero-touch automatic captcha solver** (no clicking, no typing captchas).
+
+```
+login (auto captcha) → search → Tatkal countdown race → passengers → UPI assist → PNR
+```
+
+## ✨ Features
+
+- **Camoufox stealth Firefox** — anti-fingerprinting, human-like mouse (`humanize`),
+  Indian locale/timezone/geolocation, persistent profile (login once, reuse session).
+- **Zero-touch captcha engine** (`src/ticket_booker/captcha/`):
+  1. **Local OCR** (Tesseract + IRCTC-tuned preprocessing: denoise, Otsu/adaptive
+     threshold, morphology) — free, offline, no API key.
+  2. **Buster-style reCAPTCHA solver** — auto-clicks the checkbox; if challenged,
+     switches to the **audio challenge**, downloads + transcribes it automatically.
+     No button to press, no touch needed.
+  3. **Paid fallback** — 2Captcha / AntiCaptcha image-to-text API.
+  4. **Manual assist** — last resort: solve once in the open browser, bot continues.
+- **Tatkal race mode** — NTP clock sync, precise 10:00 (AC) / 11:00 (Non-AC) countdown,
+  availability refresh loop, instant Book-Now.
+- **Safe payments** — bot never touches card/netbanking/OTP secrets. UPI tab + UPI ID
+  pre-fill, you approve on your phone, bot captures the PNR.
+- **Doctor + offline captcha test** — `ticket-booker doctor` checks every dependency;
+  `ticket-booker solve-captcha img.png` tests OCR without a browser.
+- **RailOne** — honest status: RailOne is a mobile app with no public web flow, so
+  bookings fulfil via identical IRCTC-web inventory (same trains/PNR/fares); Appium
+  adapter is on the roadmap (`ticket-booker railone --roadmap`).
+
+## ⚠️ Disclaimer — read this
+
+- For **personal use on your own IRCTC account**. Respect IRCTC's Terms of Use and
+  fair-use limits; don't hammer their servers (refresh interval ≥ ~1s).
+- Captcha automation exists so *you* don't have to babysit *your own* booking —
+  don't use this to bulk-book, scalp, or resell (that's illegal under the Railways Act).
+- Payments stay **human-in-the-loop by design**. Never put card/CVV/OTP in the config.
+- IRCTC changes its site layout periodically — if a step breaks, check
+  `src/ticket_booker/irctc/constants.py` (all selectors live there) and open a PR.
+
+## 📦 Installation
+
+**1. Python deps**
+
+```bash
+git clone https://github.com/codero-sus/Ticket_Booker_IN.git
+cd Ticket_Booker_IN
+pip install -r requirements.txt
+```
+
+**2. Camoufox browser binaries** (one-time download)
+
+```bash
+camoufox fetch
+```
+
+**3. System binaries for captcha solving**
+
+```bash
+# Ubuntu/Debian
+sudo apt install tesseract-ocr ffmpeg
+
+# macOS
+brew install tesseract ffmpeg
+
+# Windows: install Tesseract (UB-Mannheim build) + ffmpeg, add both to PATH
+```
+
+- `tesseract` → required for free local OCR.
+- `ffmpeg` → required for reCAPTCHA *audio* mp3 decoding.
+
+**4. Health check**
+
+```bash
+ticket-booker doctor
+```
+
+## 🚀 Quickstart
+
+```bash
+# 1. Create config
+ticket-booker init-config          # writes config.json
+
+# 2. Edit config.json (journey, passengers, credentials...)
+#    Tip: keep secrets in env instead: IRCTC_USER / IRCTC_PASS / IRCTC_MOBILE / IRCTC_UPI
+
+# 3. Validate everything
+ticket-booker doctor --config config.json
+
+# 4. Log in once (saves session to ./profiles/irctc)
+ticket-booker login -c config.json
+
+# 5a. Normal booking
+ticket-booker book -c config.json
+
+# 5b. Tatkal booking (NTP sync + 10/11 AM race + auto captcha)
+ticket-booker tatkal -c config.json
+```
+
+Other commands:
+
+```bash
+ticket-booker search -c config.json        # login + search only (tests selectors safely)
+ticket-booker solve-captcha shot.png       # offline OCR test on any captcha image
+ticket-booker railone --roadmap            # RailOne status
+```
+
+## ⚙️ Configuration (`config.json`)
+
+| Section | Key fields |
+|---|---|
+| `irctc` | `username`, `password`, `mobile` (or `$IRCTC_USER` etc.) |
+| `journey` | `from_station`/`to_station` codes (NDLS), `date` (YYYY-MM-DD of **journey**), `train_no` (5-digit or empty=any), `class_code` (SL/3A/2A/1A/CC/EC/2S/3E), `quota` (GN/TQ/PT/LD…) |
+| `passengers` | up to 6 (4 for Tatkal): `name`, `age`, `gender` M/F/T, `berth` LB/UB/MB/SL/SU/WS/CP/NP, `food` Veg/Non Veg/No Food |
+| `preferences` | `mobile`, `auto_upgrade`, `confirm_berths`, `travel_insurance` |
+| `payment` | `method`: `manual` (default) or `upi` (+`upi_id` pre-fill), `wait_minutes` |
+| `tatkal` | `enabled`, `arrive_minutes_early` (login+search done ahead), `refresh_interval_ms` |
+| `browser` | `headless`, `humanize`, `profile_dir`, `locale`, `timezone`, `proxy`, `addons` (.xpi list) |
+| `captcha` | see below |
+
+### Captcha config
+
+```json
+"captcha": {
+  "mode": "auto",
+  "max_attempts": 6,
+  "ocr":        { "enabled": true,  "psm_modes": [7, 8], "min_confidence": 25.0, "max_variants": 6 },
+  "recaptcha_audio": { "enabled": true, "language": "en", "max_audio_attempts": 3 },
+  "service":    { "enabled": false, "provider": "twocaptcha", "api_key": "", "poll_timeout": 120 },
+  "on_failure": "manual",
+  "debug_dir":  "./screenshots/captcha"
+}
+```
+
+- `mode`: `auto` (zero-touch) · `manual` (always ask human) · `assist` (reserved).
+- `service`: enable + set key (or `$CAPTCHA_API_KEY`) for 2Captcha/AntiCaptcha fallback.
+- `on_failure: manual` + headed browser → bot pauses, you solve once, it continues.
+  Set `"error"` for fully unattended runs (cron/VPS).
+- Every captcha attempt is saved under `debug_dir` for tuning.
+
+**Test OCR offline:** screenshot any IRCTC captcha, then
+`ticket-booker solve-captcha captcha.png`.
+
+## ⏱️ Tatkal playbook
+
+1. Day before: `ticket-booker login` (warm session) and verify `doctor` is green.
+2. Journey `date` = the train's **source-station starting date**; Tatkal opens one day
+   before at **10:00 IST (AC)** / **11:00 IST (Non-AC)** — the bot NTP-syncs and counts down.
+3. Run `ticket-booker tatkal -c config.json` ~15 min early. It logs in, searches,
+   waits for the exact second, refreshes availability and books.
+4. Payment: approve the UPI collect request on your phone; the bot grabs the PNR and
+   screenshots the ticket.
+
+Tips: wired/fast network, `block_images: false` (IRCTC needs its images), keep the
+machine awake, and do a dry `search` run first.
+
+## 🧩 Project layout
+
+```
+src/ticket_booker/
+  cli.py                 ticket-booker commands (book/tatkal/login/search/doctor/...)
+  config.py              pydantic config + env overrides
+  browser.py             Camoufox launcher (stealth, humanize, persistent profile)
+  timing.py              IST clock, NTP sync, Tatkal countdown
+  captcha/
+    manager.py           AutoCaptcha solver chain
+    ocr_solver.py        local Tesseract OCR (zero-touch text captchas)
+    preprocess.py        IRCTC-tuned image cleaning (OpenCV/PIL)
+    recaptcha_solver.py  Buster-style audio solver (zero-touch reCAPTCHA)
+    service_solver.py    2Captcha / AntiCaptcha fallback
+  irctc/
+    constants.py         ALL selectors + label maps (edit here when IRCTC changes)
+    login.py             login + captcha retry loop
+    search.py            search + Tatkal refresh race
+    passengers.py        passenger form fast-fill
+    payment.py           UPI assist + PNR capture (human approves payment)
+    booker.py            end-to-end orchestration
+  railone/               RailOne adapter (IRCTC fallback + roadmap)
+tests/                   pytest unit tests (offline, no browser needed)
+```
+
+## 🛠️ Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `camoufox fetch` not run | Run it once; `doctor` tells you. |
+| OCR always fails | Install `tesseract` binary (not just pip pkg); check `./screenshots/captcha/` samples with `solve-captcha`. |
+| Login loops on captcha | IRCTC may have changed the captcha style — open an issue with a sample (redact credentials). |
+| `SIGN IN` / `Book Now` not found | IRCTC changed markup → update `irctc/constants.py` selectors, PRs welcome. |
+| Session expired mid-Tatkal | Login closer to opening time; reduce `arrive_minutes_early`. |
+| Audio reCAPTCHA fails | Install `ffmpeg`; needs internet for Google STT (or set `VOSK_MODEL_PATH` + `pip install vosk`). |
+| Headless server | Use `headless: true` → auto virtual display (Xvfb); needs `xvfb` installed. |
+
+## 🗺️ Roadmap
+
+- [ ] Appium RailOne adapter (real device)
+- [ ] Premium-Tatkal dynamic-fare display
+- [ ] Multi-train preference list (fallback trains if WL)
+- [ ] Auto berth/coach preference + chart prediction hints
+- [ ] Selector self-healing + `doctor --fix` for common breakages
+
+## 📄 License
+
+MIT — see [LICENSE](LICENSE) (to be added). Use responsibly and at your own risk;
+the authors aren't affiliated with IRCTC/RailOne and aren't liable for missed trains. 🚂
