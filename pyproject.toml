@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ticket-booker-in"
+version = "0.1.0"
+description = "Automates Indian railway ticket booking (IRCTC, RailOne) using Camoufox stealth browser automation."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Ticket_Booker_IN" }]
+keywords = ["irctc", "tatkal", "railone", "camoufox", "playwright", "automation", "indian-railways", "captcha"]
+dependencies = [
+    "camoufox>=0.4.0",
+    "playwright>=1.40,<1.63",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "ntplib>=0.4.0",
+    "rich>=13.0",
+    "requests>=2.28",
+    "pillow>=10.0",
+    "opencv-python-headless>=4.8",
+    "numpy>=1.24",
+    "pytesseract>=0.3.10",
+    "SpeechRecognition>=3.10",
+    "pydub>=0.25",
+]
+
+[project.optional-dependencies]
+offline-stt = ["vosk>=0.3.22"]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+ticket-booker = "ticket_booker.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

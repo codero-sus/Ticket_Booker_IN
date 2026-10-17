@@ -1,0 +1,24 @@
+# Browser automation (stealth Firefox)
+camoufox[geoip]>=0.4.0
+playwright>=1.40,<1.63
+
+# Config / utils
+pydantic>=2.0
+pyyaml>=6.0
+ntplib>=0.4.0
+rich>=13.0
+requests>=2.28
+
+# Zero-touch captcha: local OCR
+pillow>=10.0
+opencv-python-headless>=4.8
+numpy>=1.24
+pytesseract>=0.3.10
+
+# Zero-touch captcha: Buster-style reCAPTCHA audio solving
+SpeechRecognition>=3.10
+pydub>=0.25
+# vosk>=0.3.22  # optional: offline speech recognition (needs VOSK_MODEL_PATH)
+
+# Dev / test
+pytest>=7.0
