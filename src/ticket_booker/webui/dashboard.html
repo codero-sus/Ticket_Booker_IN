@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ticket_Booker_IN — Dashboard</title>
+<style>
+  :root { --bg:#0f1420; --card:#1a2233; --line:#2b3a55;
+    --txt:#e8edf7; --dim:#9aa7c2; --acc:#ffb020; --ok:#35d07f; --bad:#ff5d5d; --run:#4da3ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+    font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  header { display:flex; align-items:center; gap:12px; padding:14px 22px;
+    background:#0b101c; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  header h1 { font-size:19px; margin:0; }
+  header h1 span { color:var(--acc); }
+  .pill { margin-left:auto; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600;
+    background:#233; color:var(--dim); border:1px solid var(--line); }
+  .pill.ok { background:#0e2a1e; color:var(--ok); border-color:#1d5c3c; }
+  main { max-width:1180px; margin:0 auto; padding:18px; display:grid; gap:16px;
+    grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
+  .card.wide { grid-column:1/-1; }
+  .card h2 { margin:0 0 10px; font-size:16px; color:var(--acc); }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:8px 0; }
+  button { background:var(--acc); color:#1a1206; border:0; border-radius:8px;
+    padding:9px 14px; font-weight:700; cursor:pointer; font-size:14px; }
+  button.ghost { background:#26314a; color:var(--txt); font-weight:600; }
+  button:disabled { opacity:.5; cursor:wait; }
+  button:hover:not(:disabled) { filter:brightness(1.1); }
+  input,select,textarea { background:#0f1728; color:var(--txt); border:1px solid var(--line);
+    border-radius:8px; padding:8px 10px; font-size:14px; }
+  input:focus,textarea:focus { outline:1px solid var(--acc); }
+  label { color:var(--dim); font-size:13px; }
+  .checks { max-height:230px; overflow:auto; font-size:13.5px; }
+  .checks div { padding:3px 0; border-bottom:1px dashed #24304a; }
+  .ok-t { color:var(--ok); } .bad-t { color:var(--bad); }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th,td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--dim); font-weight:600; }
+  .st { font-weight:700; } .st.done{color:var(--ok)} .st.failed{color:var(--bad)}
+  .st.running,.st.queued{color:var(--run)}
+  #terminal { background:#070b14; border:1px solid var(--line); border-radius:8px;
+    height:300px; overflow-y:auto; padding:10px 12px; font:12.5px/1.55 ui-monospace,Consolas,monospace; }
+  #terminal .t { color:#5f6f8f; } #terminal .ERROR,#terminal .CRITICAL { color:var(--bad); }
+  #terminal .WARNING { color:var(--acc); }
+  textarea#cfg { width:100%; height:220px; font:12.5px/1.5 ui-monospace,Consolas,monospace; }
+  .hint { color:var(--dim); font-size:13px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  @media (max-width:700px){ .grid2{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<header>
+  <h1>🚂 Ticket_Booker_<span>IN</span> — Dashboard</h1>
+  <div class="pill" id="health">connecting…</div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>🩺 System Doctor</h2>
+    <div class="checks" id="checks">loading…</div>
+    <div class="row"><button class="ghost" onclick="loadDoctor()">Re-check</button></div>
+  </section>
+
+  <section class="card">
+    <h2>🎫 Booking</h2>
+    <label><input type="checkbox" id="headless"> headless browser</label>
+    <div class="row">
+      <button class="ghost" data-run="login">Login</button>
+      <button class="ghost" data-run="search">Search (dry)</button>
+      <button data-run="book">Book Now</button>
+      <button data-run="tatkal">⚡ Tatkal Race</button>
+    </div>
+    <p class="hint">Uses the config below. Tatkal waits for the 10/11 AM window automatically.
+    Payment is always completed by you in the browser.</p>
+  </section>
+
+  <section class="card">
+    <h2>🧰 Brute Tools</h2>
+    <div class="grid2">
+      <div>
+        <label>PNR (10-digit)</label>
+        <div class="row"><input id="t-pnr" placeholder="e.g. 1234567890" size="14">
+        <button class="ghost" onclick="runTool('pnr',{pnr:val('t-pnr')})">Check</button></div>
+      </div>
+      <div>
+        <label>Train schedule</label>
+        <div class="row"><input id="t-sch" placeholder="e.g. 12430" size="10">
+        <button class="ghost" onclick="runTool('schedule',{train_no:val('t-sch')})">Route</button></div>
+      </div>
+      <div>
+        <label>Availability (uses config journey)</label>
+        <div class="row"><input id="t-avl" placeholder="train no (optional)" size="16">
+        <button class="ghost" onclick="runTool('availability',{train_no:val('t-avl')})">Seats</button></div>
+      </div>
+      <div>
+        <label>Live status</label>
+        <div class="row"><input id="t-live" placeholder="train e.g. 12430" size="12">
+        <input id="t-stn" placeholder="stn (opt)" size="8">
+        <button class="ghost" onclick="runTool('live',{train_no:val('t-live'),station:val('t-stn')})">Spot</button></div>
+      </div>
+    </div>
+    <div class="row"><button class="ghost" onclick="runTool('fare',{})">💰 Fare enquiry (dry run, never pays)</button></div>
+    <p class="hint">Every tool auto-solves captchas, retries brutally and saves a report to <b>./reports/</b>.</p>
+  </section>
+
+  <section class="card">
+    <h2>🔓 Captcha Tester</h2>
+    <div class="row"><input type="file" id="capfile" accept="image/*">
+    <button class="ghost" onclick="testCaptcha()">Solve</button></div>
+    <div id="capout" class="hint">Upload any captcha image to test zero-touch OCR.</div>
+  </section>
+
+  <section class="card wide">
+    <h2>📋 Jobs</h2>
+    <table><thead><tr><th>ID</th><th>Kind</th><th>Status</th><th>Started</th><th>Result</th></tr></thead>
+    <tbody id="jobs"><tr><td colspan="5" class="hint">no jobs yet</td></tr></tbody></table>
+  </section>
+
+  <section class="card wide">
+    <h2>📜 Live Log</h2>
+    <div id="terminal"></div>
+  </section>
+
+  <section class="card wide">
+    <h2>⚙️ Config (<span id="cfgpath">config.json</span>)</h2>
+    <textarea id="cfg" spellcheck="false"></textarea>
+    <div class="row"><button onclick="saveConfig()">💾 Save &amp; Validate</button>
+    <span id="cfgmsg" class="hint"></span></div>
+  </section>
+
+  <section class="card wide">
+    <h2>💾 Reports</h2>
+    <div class="row"><button class="ghost" onclick="loadReports()">Refresh</button></div>
+    <div id="reports" class="hint">—</div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const val = id => $(id).value.trim();
+const headless = () => $('headless').checked;
+
+async function api(path, opts={}) {
+  const r = await fetch(path, opts);
+  const j = await r.json().catch(()=>({ok:false,error:'bad json'}));
+  if (!r.ok && j.ok === undefined) throw new Error('HTTP '+r.status);
+  return j;
+}
+
+async function loadHealth() {
+  try {
+    const j = await api('/api/health');
+    const p = $('health');
+    p.textContent = '● server v' + j.version;
+    p.classList.add('ok');
+  } catch(e) { $('health').textContent = '○ offline'; }
+}
+
+async function loadDoctor() {
+  const box = $('checks'); box.textContent = 'checking…';
+  try {
+    const j = await api('/api/doctor');
+    box.innerHTML = j.checks.map(c =>
+      `<div><span class="${c.ok?'ok-t':'bad-t'}">${c.ok?'✅':'❌'}</span> ${c.name}` +
+      (c.hint && !c.ok ? ` <span class="hint">— ${c.hint}</span>` : '') + `</div>`).join('');
+  } catch(e) { box.textContent = 'doctor failed: ' + e; }
+}
+
+document.querySelectorAll('[data-run]').forEach(b => b.onclick = async () => {
+  b.disabled = true;
+  try {
+    const j = await api('/api/run', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({kind:b.dataset.run, headless:headless()})});
+    log('job ' + (j.job ? j.job.id + ' started (' + j.job.kind + ')' : JSON.stringify(j)));
+    loadJobs();
+  } catch(e) { log('run failed: ' + e); }
+  b.disabled = false;
+});
+
+async function runTool(name, args) {
+  try {
+    const j = await api('/api/tool', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name, args, headless:headless()})});
+    if (!j.ok) { log('tool error: ' + (j.error||'unknown')); return; }
+    log('tool job ' + j.job.id + ' started (' + name + ')');
+    loadJobs();
+  } catch(e) { log('tool failed: ' + e); }
+}
+
+async function loadJobs() {
+  try {
+    const j = await api('/api/jobs');
+    $('jobs').innerHTML = j.jobs.length ? j.jobs.map(x =>
+      `<tr><td>${x.id}</td><td>${x.kind}</td>` +
+      `<td class="st ${x.status}">${x.status}</td><td>${x.started}</td>` +
+      `<td>${(x.message||'').slice(0,160)}</td></tr>`).join('')
+      : '<tr><td colspan="5" class="hint">no jobs yet</td></tr>';
+  } catch(e) {}
+}
+
+async function loadConfig() {
+  try {
+    const j = await api('/api/config');
+    if (j.ok) { $('cfg').value = j.content; $('cfgpath').textContent = j.path; $('cfgmsg').textContent=''; }
+    else $('cfgmsg').textContent = j.error;
+  } catch(e) { $('cfgmsg').textContent = 'load failed: ' + e; }
+}
+
+async function saveConfig() {
+  $('cfgmsg').textContent = 'saving…';
+  try {
+    const j = await api('/api/config', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({content:$('cfg').value})});
+    $('cfgmsg').textContent = j.ok ? '✅ saved to ' + j.path : '❌ ' + j.error;
+  } catch(e) { $('cfgmsg').textContent = 'save failed: ' + e; }
+}
+
+async function testCaptcha() {
+  const f = $('capfile').files[0];
+  if (!f) { $('capout').textContent = 'pick an image first'; return; }
+  $('capout').textContent = 'solving…';
+  const fd = new FormData(); fd.append('image', f);
+  try {
+    const r = await fetch('/api/solve-captcha', {method:'POST', body:fd});
+    const j = await r.json();
+    $('capout').innerHTML = j.ok
+      ? `✅ <b>${j.text}</b> <span class="hint">(conf ${j.confidence}, via ${j.solver})</span>`
+      : `❌ unsolved <span class="hint">(solver: ${j.solver})</span>`;
+  } catch(e) { $('capout').textContent = 'solve failed: ' + e; }
+}
+
+async function loadReports() {
+  try {
+    const j = await api('/api/reports');
+    $('reports').textContent = j.reports.length ? j.reports.join('   •   ') : 'no reports yet — run a tool!';
+  } catch(e) {}
+}
+
+function log(msg) {
+  const t = $('terminal');
+  const d = document.createElement('div');
+  d.innerHTML = `<span class="t">[ui]</span> ${msg}`;
+  t.appendChild(d); t.scrollTop = t.scrollHeight;
+  while (t.children.length > 400) t.removeChild(t.firstChild);
+}
+
+function startStream() {
+  const es = new EventSource('/api/stream');
+  es.onmessage = ev => {
+    try {
+      const e = JSON.parse(ev.data);
+      const t = $('terminal');
+      const d = document.createElement('div');
+      d.innerHTML = `<span class="t">${e.time}</span> <span class="${e.level}">${e.level}</span> ${e.msg}`;
+      t.appendChild(d); t.scrollTop = t.scrollHeight;
+      while (t.children.length > 400) t.removeChild(t.firstChild);
+    } catch(err) {}
+  };
+  es.onerror = () => { /* auto-reconnects */ };
+}
+
+loadHealth(); loadDoctor(); loadJobs(); loadConfig(); loadReports(); startStream();
+setInterval(loadJobs, 4000); setInterval(loadReports, 15000);
+</script>
+</body>
+</html>

@@ -29,6 +29,13 @@ login (auto captcha) → search → Tatkal countdown race → passengers → UPI
 - **RailOne** — honest status: RailOne is a mobile app with no public web flow, so
   bookings fulfil via identical IRCTC-web inventory (same trains/PNR/fares); Appium
   adapter is on the roadmap (`ticket-booker railone --roadmap`).
+- **BRUTE scraper tools** (`ticket-booker tool …`) — PNR status, seat/berth
+  availability, train schedule/route, fare enquiry (dry-run, never pays), live
+  running status. Text-first locators (immune to DOM reshuffles), auto-captcha on
+  every page, retry + reload + re-login recovery, reports to `./reports/`.
+- **Easy WebUI** (`ticket-booker webui`) — local dashboard that **auto-opens in
+  Chrome**: one-click booking + tools, live log stream, config editor, captcha
+  tester, job history. No terminal needed after launch.
 
 ## ⚠️ Disclaimer — read this
 
@@ -105,6 +112,16 @@ Other commands:
 ticket-booker search -c config.json        # login + search only (tests selectors safely)
 ticket-booker solve-captcha shot.png       # offline OCR test on any captcha image
 ticket-booker railone --roadmap            # RailOne status
+
+# BRUTE scraper tools (all auto-solve captchas, all save ./reports/)
+ticket-booker tool pnr --pnr 1234567890 -c config.json
+ticket-booker tool availability -c config.json [--train 12430]
+ticket-booker tool schedule --train 12430 -c config.json
+ticket-booker tool fare -c config.json     # dry run to review page, STOPS before pay
+ticket-booker tool live --train 12430 [--station CNB] -c config.json
+
+# Easy WebUI (auto-opens in Chrome once ready)
+ticket-booker webui                        # --port 8765 --no-open to skip Chrome
 ```
 
 ## ⚙️ Configuration (`config.json`)
@@ -156,11 +173,52 @@ ticket-booker railone --roadmap            # RailOne status
 Tips: wired/fast network, `block_images: false` (IRCTC needs its images), keep the
 machine awake, and do a dry `search` run first.
 
+## 🧰 BRUTE tools (scrapers that can't fail easily)
+
+| Tool | What it does | Captcha? | Login? |
+|---|---|---|---|
+| `tool pnr --pnr …` | Passenger + chart status | ✅ auto | IRCTC session |
+| `tool availability` | Seat/berth status per train+class | ✅ auto | IRCTC session |
+| `tool schedule --train …` | Full route/halts via NTES (+IRCTC fallback) | ✅ auto | No |
+| `tool fare` | Total fare via dry-run to review page, **stops before pay** | ✅ auto | IRCTC session |
+| `tool live --train …` | Live running status / delay via NTES | ✅ auto | No |
+
+Why they survive ("BRUTE"):
+- **Text-first locators** — finds buttons/inputs by *visible text anywhere on the
+  page* (`filter(has_text=…)`, XPath `contains()`), not brittle CSS paths. IRCTC can
+  reshuffle divs and the tools still find "Submit".
+- **Auto-captcha on every page** — any captcha image found is OCR'd and filled
+  before each submit, with refresh-and-retry loops.
+- **Retry + reload + re-login** — every step retries with page reloads and one
+  session recovery per run; failures save screenshots.
+- **Human delays** — randomised 2–10s style pauses between actions.
+- **Reports always** — JSON + human-readable `.txt` in `./reports/` (like the
+  sample grabber's credential file).
+
+## 🖥️ Easy WebUI
+
+```bash
+ticket-booker webui
+```
+
+Starts a local server (default http://127.0.0.1:8765, auto-bumps if busy), waits
+until `/api/health` is green, then **auto-opens the dashboard in Chrome**
+(Chromium accepted, default browser as fallback). The dashboard has:
+
+- 🩺 Doctor panel (deps, binaries, config health)
+- 🎫 One-click Login / Search / Book / ⚡Tatkal
+- 🧰 All 5 brute tools with input forms
+- 🔓 Captcha tester (upload image → OCR result)
+- 📋 Job history + 📜 live log stream + ⚙️ config editor + 💾 reports
+
+API (for scripts): `GET /api/health /doctor /tools /jobs /logs /reports`,
+`POST /api/run /tool /config /solve-captcha`, live `GET /api/stream` (SSE).
+
 ## 🧩 Project layout
 
 ```
 src/ticket_booker/
-  cli.py                 ticket-booker commands (book/tatkal/login/search/doctor/...)
+  cli.py                 ticket-booker commands (book/tatkal/login/search/doctor/tool/webui/...)
   config.py              pydantic config + env overrides
   browser.py             Camoufox launcher (stealth, humanize, persistent profile)
   timing.py              IST clock, NTP sync, Tatkal countdown
@@ -177,6 +235,13 @@ src/ticket_booker/
     passengers.py        passenger form fast-fill
     payment.py           UPI assist + PNR capture (human approves payment)
     booker.py            end-to-end orchestration
+  tools/                 BRUTE scrapers (text-first + auto-captcha + reports)
+    base.py              BruteContext: find/click/fill by text, retry, captcha-anywhere
+    pnr.py / availability.py / schedule.py / fare.py / live_status.py
+  webui/
+    server.py            Flask API + jobs + SSE logs
+    dashboard.html       single-file offline-safe dashboard
+    launcher.py          serve + wait-ready + auto-open Chrome
   railone/               RailOne adapter (IRCTC fallback + roadmap)
 tests/                   pytest unit tests (offline, no browser needed)
 ```
