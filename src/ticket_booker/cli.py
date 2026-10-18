@@ -58,6 +58,20 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common(s, config_required=False)
     s.add_argument("--config", "-c", default="config.json")
 
+    s = sub.add_parser("tool", help="Run a BRUTE scraper tool: pnr|availability|schedule|fare|live.")
+    s.add_argument("name", help="Tool name (pnr, availability, schedule, fare, live).")
+    s.add_argument("--pnr", default="", help="PNR number (pnr tool).")
+    s.add_argument("--train", default="", help="Train number override (schedule/live/availability).")
+    s.add_argument("--station", default="", help="Station code filter (live tool).")
+    _add_common(s)
+
+    s = sub.add_parser("webui", help="Launch the easy WebUI dashboard (auto-opens in Chrome).")
+    s.add_argument("--port", type=int, default=8765, help="Port (default 8765, auto-bumps if busy).")
+    s.add_argument("--host", default="127.0.0.1", help="Bind host (default 127.0.0.1).")
+    s.add_argument("--no-open", action="store_true", help="Don't auto-open Chrome.")
+    s.add_argument("--config", "-c", default="config.json", help="Config file the WebUI manages.")
+    s.add_argument("-v", "--verbose", action="store_true")
+
     return p
 
 
@@ -243,6 +257,49 @@ def cmd_railone(args) -> int:
     return 0 if res.success else 1
 
 
+def cmd_tool(args) -> int:
+    from .tools import TOOLS
+
+    name = args.name.strip().lower()
+    if name not in TOOLS:
+        print(f"Unknown tool {name!r}. Choose from: {', '.join(TOOLS)}")
+        for k, (_fn, desc) in TOOLS.items():
+            print(f"  {k:12s} {desc}")
+        return 2
+    fn, _desc = TOOLS[name]
+    cfg = _load_cfg(args)
+    headless = _resolve_headless(args, cfg)
+    kwargs: dict = {"headless": headless}
+    if name == "pnr":
+        if not args.pnr:
+            print("Usage: ticket-booker tool pnr --pnr 1234567890 -c config.json")
+            return 2
+        kwargs["pnr"] = args.pnr
+    elif name in ("schedule", "live"):
+        if not args.train:
+            print(f"Usage: ticket-booker tool {name} --train 12430 [--station NDLS] -c config.json")
+            return 2
+        kwargs["train_no"] = args.train
+        if name == "live":
+            kwargs["station"] = args.station
+    elif name == "availability":
+        if args.train:
+            kwargs["train_no"] = args.train
+    res = fn(cfg, **kwargs)
+    print(("SUCCESS: " if res.ok else "FAILED: ") + res.message)
+    if res.report_path:
+        print(f"Report: {res.report_path}")
+    return 0 if res.ok else 1
+
+
+def cmd_webui(args) -> int:
+    from .webui.launcher import serve
+
+    serve(port=args.port, host=args.host, open_browser=not args.no_open,
+          config_path=args.config)
+    return 0
+
+
 def main(argv=None) -> None:
     args = build_parser().parse_args(argv)
     setup_logging(getattr(args, "verbose", False))
@@ -255,5 +312,7 @@ def main(argv=None) -> None:
         "book": lambda a: cmd_book(a, False),
         "tatkal": lambda a: cmd_book(a, True),
         "railone": cmd_railone,
+        "tool": cmd_tool,
+        "webui": cmd_webui,
     }[args.command](args)
     sys.exit(code or 0)

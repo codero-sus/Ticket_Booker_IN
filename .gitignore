@@ -25,8 +25,9 @@ config.yaml
 config.yml
 .env
 
-# Screenshots / debug artefacts
+# Screenshots / reports / debug artefacts
 screenshots/
+reports/
 debug/
 *.png
 

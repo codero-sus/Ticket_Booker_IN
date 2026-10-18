@@ -20,5 +20,8 @@ SpeechRecognition>=3.10
 pydub>=0.25
 # vosk>=0.3.22  # optional: offline speech recognition (needs VOSK_MODEL_PATH)
 
+# Easy WebUI dashboard
+flask>=3.0
+
 # Dev / test
 pytest>=7.0

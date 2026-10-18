@@ -25,6 +25,7 @@ dependencies = [
     "pytesseract>=0.3.10",
     "SpeechRecognition>=3.10",
     "pydub>=0.25",
+    "flask>=3.0",
 ]
 
 [project.optional-dependencies]
