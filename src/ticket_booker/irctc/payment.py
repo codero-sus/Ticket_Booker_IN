@@ -25,6 +25,16 @@ SUCCESS_HINTS = (
     "booking successful", "booked successfully", "transaction successful",
     "pnr", "chart", "ticket booked", "booking confirmed",
 )
+FAILURE_HINTS = (
+    "payment failed", "transaction failed", "payment declined",
+    "transaction declined", "payment cancelled", "cancelled by user",
+    "transaction cancelled", "payment unsuccessful",
+)
+
+
+def is_failure_page(text):
+    low = (text or "").lower()
+    return any(f in low for f in FAILURE_HINTS)
 
 
 def find_pnr(text: str) -> str | None:
@@ -72,12 +82,17 @@ def wait_for_completion(page, payment: Payment) -> str | None:
             body = ""
         pnr = find_pnr(body)
         lowered = body.lower()
+        if is_failure_page(lowered):
+            log.error("Payment FAILED (gateway said so) - aborting wait.")
+            save_screenshot(page, "payment_failed")
+            return None
         if pnr and any(h in lowered for h in SUCCESS_HINTS):
             log.info("Booking confirmed! PNR: %s", pnr)
             save_screenshot(page, f"ticket_PNR_{pnr}")
             return pnr
         if time.time() - last_hint > 60:
             log.info("Still waiting for payment confirmation...")
+            save_screenshot(page, "payment_waiting")
             last_hint = time.time()
         time.sleep(2.0)
 
