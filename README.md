@@ -246,6 +246,36 @@ src/ticket_booker/
 tests/                   pytest unit tests (offline, no browser needed)
 ```
 
+## ⚡ ULTIMATE BRUTE GOD mode (resilience dial)
+
+Every tool runs on the GOD engine (`src/ticket_booker/god/` + `tools/base.py`):
+
+| Brutality | Behavior |
+|---|---|
+| 1 calm | Minimal retries. Debugging only. |
+| 2 normal | Classic retries + reload. |
+| 3 BRUTE | + self-healing selectors, fuzzy fallback, diagnostics. |
+| 4 GOD (default) | + block/ban detection, session keepalive, fresh-browser relaunch ladder. |
+| 5 ULTIMATE | + max retries, screenshot every step, proxy rotation, no mercy. |
+
+Set it three ways: config `"brute": {"level": 5}`, CLI `--brutality 5`
+(`book`/`tatkal`/`tool`/`login`/`search`), or the WebUI GOD-dial selector.
+
+God powers:
+- **Self-healing selectors** — `SelectorMemory` (`./profiles/selector_memory.json`)
+  learns which locator strategy wins per action and tries winners first, across runs.
+- **Fuzzy fallback** — "Submitt", "SUBMIT \u00BB", "Get Statuss" still match via
+  similarity scoring when exact text fails.
+- **Block/ban detection** — access-denied / rate-limit / bot-wall pages raise
+  `BlockedError`; the ladder cools down or **rotates `brute.proxy_list`** and relaunches.
+- **Session keepalive** — dead-session text mid-run triggers instant auto re-login.
+- **Browser-death relaunch** — crash/target-closed aborts the ladder immediately and
+  GOD rises a fresh browser (up to 4 rounds at level 5).
+- **Captcha paranoia** — identical-image-after-refresh detection forces a real reload.
+- **Black-box diagnostics** — ultimate failures save `./diagnostics/<ts>/` bundles
+  (screenshot + HTML + URL + traceback + *redacted* config), safe for GitHub issues.
+- **Stealth jitter** — human mouse drift before clicks, randomised delays everywhere.
+
 ## 🛠️ Troubleshooting
 
 | Symptom | Fix |

@@ -182,7 +182,7 @@ def create_app(config_path: str | None = None):
         kind = str(body.get("kind", "book"))
         if kind not in ("login", "search", "book", "tatkal"):
             return jsonify({"ok": False, "error": f"unknown kind {kind}"}), 400
-        job = _start_job(kind, {"headless": bool(body.get("headless", False))})
+        job = _start_job(kind, {"headless": bool(body.get("headless", False)), "brutality": int(body.get("brutality") or 0)})
         return jsonify({"ok": True, "job": job})
 
     @app.post("/api/tool")
@@ -193,7 +193,7 @@ def create_app(config_path: str | None = None):
         name = str(body.get("name", ""))
         if name not in TOOLS:
             return jsonify({"ok": False, "error": f"unknown tool {name}"}), 400
-        job = _start_job(f"tool:{name}", {"args": body.get("args", {}),
+        job = _start_job(f"tool:{name}", {"args": body.get("args", {}), "brutality": int(body.get("brutality") or 0),
                                           "headless": bool(body.get("headless", False))})
         return jsonify({"ok": True, "job": job})
 
@@ -285,6 +285,10 @@ def _run_job(app, job_id: str, kind: str, payload: dict) -> None:
         from ..config import load_config
 
         cfg = load_config(app.config["TB_CONFIG"])
+        brut = payload.get("brutality") or 0
+        if brut:
+            cfg.brute.level = int(brut)
+            log.info("GOD dial set to %d/5 for this job", cfg.brute.level)
         headless = payload.get("headless") or None
         if kind in ("login", "search", "book", "tatkal"):
             from ..irctc.booker import IRCTCBooker

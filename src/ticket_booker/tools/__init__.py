@@ -11,7 +11,7 @@ Tools never touch payments. Booking stays in `irctc/booker.py`.
 """
 
 from .availability import run_tool as availability_tool
-from .base import BruteContext, ToolResult, run_with_browser
+from .base import BlockedError, BruteContext, ToolResult, run_with_browser
 from .fare import run_tool as fare_tool
 from .live_status import run_tool as live_status_tool
 from .pnr import run_tool as pnr_tool
@@ -27,6 +27,7 @@ TOOLS = {
 
 __all__ = [
     "TOOLS",
+    "BlockedError",
     "BruteContext",
     "ToolResult",
     "run_with_browser",

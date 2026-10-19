@@ -66,6 +66,15 @@
   <section class="card">
     <h2>🎫 Booking</h2>
     <label><input type="checkbox" id="headless"> headless browser</label>
+    <label>GOD dial
+      <select id="brutality">
+        <option value="1">1 calm</option>
+        <option value="2">2 normal</option>
+        <option value="3">3 BRUTE</option>
+        <option value="4" selected>4 GOD</option>
+        <option value="5">5 ULTIMATE</option>
+      </select>
+    </label>
     <div class="row">
       <button class="ghost" data-run="login">Login</button>
       <button class="ghost" data-run="search">Search (dry)</button>
@@ -141,6 +150,7 @@
 const $ = id => document.getElementById(id);
 const val = id => $(id).value.trim();
 const headless = () => $('headless').checked;
+const brut = () => parseInt((($('brutality')||{}).value) || '4');
 
 async function api(path, opts={}) {
   const r = await fetch(path, opts);
@@ -173,7 +183,7 @@ document.querySelectorAll('[data-run]').forEach(b => b.onclick = async () => {
   try {
     const j = await api('/api/run', {method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({kind:b.dataset.run, headless:headless()})});
+      body: JSON.stringify({kind:b.dataset.run, headless:headless(), brutality:brut()})});
     log('job ' + (j.job ? j.job.id + ' started (' + j.job.kind + ')' : JSON.stringify(j)));
     loadJobs();
   } catch(e) { log('run failed: ' + e); }
@@ -184,7 +194,7 @@ async function runTool(name, args) {
   try {
     const j = await api('/api/tool', {method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({name, args, headless:headless()})});
+      body: JSON.stringify({name, args, headless:headless(), brutality:brut()})});
     if (!j.ok) { log('tool error: ' + (j.error||'unknown')); return; }
     log('tool job ' + j.job.id + ' started (' + name + ')');
     loadJobs();
