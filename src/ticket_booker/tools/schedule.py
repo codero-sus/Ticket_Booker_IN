@@ -51,7 +51,7 @@ def _via_ntes(ctx: BruteContext, train_no: str) -> dict:
         raise RuntimeError("Train-number box not found on NTES.")
     human_delay(0.5, 1.2)
     ctx.solve_captchas_on_page()
-    if not ctx.click_text("Get Schedule", "Search", "Submit", "Show", "Go"):
+    if not ctx.click_text("Get Schedule", "Search", "Submit", "Show", "Go", verify_change=True):
         raise RuntimeError("Schedule submit button not found.")
     human_delay(2.0, 4.0)
     # Captcha re-ask loop (NTES loves captchas)
@@ -60,7 +60,7 @@ def _via_ntes(ctx: BruteContext, train_no: str) -> dict:
                          "Invalid", "not found", timeout_s=18):
             break
         if ctx.solve_captchas_on_page():
-            ctx.click_text("Get Schedule", "Search", "Submit", "Go")
+            ctx.click_text("Get Schedule", "Search", "Submit", "Go", verify_change=True)
             human_delay(2.0, 4.0)
     body = ctx.page_text()
     if re.search(r"invalid|not found|no record|no data", body, re.I) and "station" not in body.lower():

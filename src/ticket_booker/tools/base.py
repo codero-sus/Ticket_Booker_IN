@@ -35,12 +35,15 @@ from ..browser import launch_browser
 from ..captcha.manager import AutoCaptcha
 from ..god.diagnostics import save_bundle
 from ..god.memory import SelectorMemory
+from ..god.pacer import Pacer
 from ..god.signals import (
     best_match,
     detect_block,
     detect_session_dead,
     escalate_delay,
     looks_like_browser_death,
+    tier_of,
+    title_for_level,
 )
 from ..utils import ensure_dir, human_delay, save_bytes, save_screenshot, timestamp
 
@@ -84,6 +87,12 @@ def _plain_run(cfg, headless: bool | None, fn: Callable, *args, **kwargs):
     """One Camoufox session, no god ladder (used BY the god ladder)."""
     with launch_browser(cfg.browser, headless) as session:
         ctx = BruteContext(cfg, session.page, headless or cfg.browser.headless)
+        try:
+            from ..god.session_vault import load_vault
+
+            load_vault(session.context)  # instant login for fresh heads
+        except Exception as exc:
+            log.debug("vault load skipped: %s", exc)
         return fn(ctx, *args, **kwargs)
 
 
@@ -96,7 +105,12 @@ def run_with_browser(cfg, headless: bool | None, fn: Callable, *args, **kwargs):
     level = int(getattr(getattr(cfg, "brute", None), "level", 3) or 3)
     if level >= 4:
         from ..god.engine import god_run
+        from ..god.hydra import heads_for, hydra_race
+        from ..god.signals import tier_of as _tier_of
 
+        if _tier_of(level) >= 6 and heads_for(cfg) > 1:
+            log.info("🐲 HYDRA: %d heads racing...", heads_for(cfg))
+            return hydra_race(cfg, headless, lambda ctx: fn(ctx, *args, **kwargs))
         return god_run(cfg, headless, lambda ctx: fn(ctx, *args, **kwargs))
     return _plain_run(cfg, headless, fn, *args, **kwargs)
 
@@ -122,7 +136,15 @@ class BruteContext:
         self._last_captcha_hash: str | None = None
         self._same_captcha_count = 0
         self._relogins_this_run = 0
-        log.info("⚡ BRUTE GOD engine engaged (level %d/5)", self.brutality)
+        self.tier = tier_of(self.brutality)
+        self.pacer = Pacer() if self.tier >= 6 else None
+        try:
+            _mins = int(getattr(brute, "max_tool_minutes", 0) or 0)
+        except (TypeError, ValueError):
+            _mins = 0
+        self._deadline = time.time() + _mins * 60 if _mins > 0 else None
+        log.info("⚡ BRUTE GOD engine engaged (level %s: %s)",
+                 self.brutality, title_for_level(self.brutality))
 
     # ---------------- core navigation ----------------
 
@@ -176,7 +198,12 @@ class BruteContext:
         pref = self.memory.preferred(key)
         if pref is None:
             return strategies
-        return sorted(strategies, key=lambda s: 0 if s[0] == pref else 1)
+        ordered = sorted(strategies, key=lambda s: 0 if s[0] == pref else 1)
+        if self.tier >= 6 and len(ordered) > 2 and random.random() < 0.2:
+            head, tail = ordered[:1], ordered[1:]
+            random.shuffle(tail)  # radioactive mutation: escape local minima
+            return head + tail
+        return ordered
 
     def _record_win(self, key: str, sid: str) -> None:
         if self.memory:
@@ -212,12 +239,16 @@ class BruteContext:
 
     def _scroll_click(self, loc, force: bool = False, what: str = "") -> bool:
         try:
+            _t0 = time.time()
             loc.scroll_into_view_if_needed(timeout=3000)
             self._wiggle(loc)
             human_delay(0.2, 0.8)
             loc.click(timeout=6000, force=force)
             if what:
                 log.info("🖱️ Clicked '%s'", what)
+            if self.pacer is not None:
+                self.pacer.record(time.time() - _t0)
+                self.pacer.sleep()
             if self.brutality >= 5:
                 self.shot("click")
             return True
@@ -301,7 +332,7 @@ class BruteContext:
             log.debug("fuzzy find failed: %s", exc)
         return None
 
-    def click_text(self, *phrases: str, timeout_each: int = 2500) -> bool:
+    def click_text(self, *phrases: str, timeout_each: int = 2500, verify_change: bool = False) -> bool:
         """Click anything (button/link/tab/cell) showing one of the phrases."""
         for phrase in phrases:
             key = f"click:{phrase.lower()}"
@@ -324,7 +355,11 @@ class BruteContext:
                     continue
                 if loc is None:
                     continue
+                before = self._page_signature() if verify_change else None
                 if self._scroll_click(loc, force=sid in ("filter", "xpath"), what=phrase):
+                    if verify_change and not self._verify_changed(before):
+                        log.info("👻 Click had no effect — escalating strategy...")
+                        continue
                     self._record_win(key, sid)
                     return True
         if self.brutality >= 3 and self._fuzzy_click(phrases):
@@ -348,6 +383,25 @@ class BruteContext:
             f"[contains(normalize-space(.), '{safe}') or contains(@value, '{safe}')]"
         )
         return self._first_visible(f"xpath={xp}", 1200)
+
+    def _page_signature(self):
+        try:
+            url = str(self.page.url)
+        except Exception:
+            url = "?"
+        try:
+            n = len(self.page.locator("body").inner_text(timeout=4000) or "")
+        except Exception:
+            n = -1
+        return (url, n)
+
+    def _verify_changed(self, before, timeout_s: int = 6) -> bool:
+        deadline = time.time() + timeout_s
+        while time.time() < deadline:
+            if self._page_signature() != before:
+                return True
+            time.sleep(0.5)
+        return False
 
     def _fuzzy_click(self, phrases: tuple[str, ...]) -> bool:
         try:
@@ -465,6 +519,8 @@ class BruteContext:
             time.sleep(0.3)
             loc.press_sequentially(value, delay=random.randint(20, 70), timeout=12000)
             log.info("⌨️ Filled '%s'", label)
+            if self.pacer is not None:
+                self.pacer.sleep()
             if self.brutality >= 5:
                 self.shot("fill")
             return True
@@ -624,10 +680,17 @@ class BruteContext:
         ladder immediately so god_run() can relaunch a FRESH browser instead
         of flogging a corpse. Ultimate failure writes a diagnostics bundle.
         """
-        retries = max(int(retries), MIN_RETRIES.get(self.brutality, 3))
+        floor = MIN_RETRIES.get(min(self.brutality, 5), 3)
+        if self.tier >= 6:
+            floor = max(floor, 7)
+        if self.tier >= 7:
+            floor = max(floor, 9)
+        retries = max(int(retries), floor)
         last: Exception | None = None
         relogged = False
         for attempt in range(1, retries + 1):
+            if self._deadline and time.time() > self._deadline:
+                raise TimeoutError(f"DOOMSDAY: exceeded max_tool_minutes budget during '{what}'")
             try:
                 if attempt > 1:
                     log.info("🔁 %s — brute attempt %d/%d", what, attempt, retries)
@@ -678,7 +741,15 @@ class BruteContext:
             pass
         log.info("🔑 Session dead — re-logging in (auto captcha)...")
         try:
-            return login(self.page, self.cfg.irctc, self.captcha, headless=self.headless)
+            ok = login(self.page, self.cfg.irctc, self.captcha, headless=self.headless)
+            if ok:
+                try:
+                    from ..god.session_vault import save_vault
+
+                    save_vault(self.page.context)
+                except Exception as exc2:
+                    log.debug("vault save skipped: %s", exc2)
+            return ok
         except Exception as exc:
             log.error("Re-login failed: %s", exc)
             return False

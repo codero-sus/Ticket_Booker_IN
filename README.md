@@ -257,8 +257,10 @@ Every tool runs on the GOD engine (`src/ticket_booker/god/` + `tools/base.py`):
 | 3 BRUTE | + self-healing selectors, fuzzy fallback, diagnostics. |
 | 4 GOD (default) | + block/ban detection, session keepalive, fresh-browser relaunch ladder. |
 | 5 ULTIMATE | + max retries, screenshot every step, proxy rotation, no mercy. |
+| 6-9 OMEGA | + HYDRA 2 heads racing, radioactive mutation, adaptive pacer, verified clicks. |
+| 10+ RADIOACTIVE | + HYDRA 3 heads, captcha rotation ensemble, cookie vault, doomsday budget. Max: 9223372036854775807. |
 
-Set it three ways: config `"brute": {"level": 5}`, CLI `--brutality 5`
+Set it three ways: config `"brute": {"level": 9223372036854775807}`, CLI `--brutality 7` (+`--heads 3`)
 (`book`/`tatkal`/`tool`/`login`/`search`), or the WebUI GOD-dial selector.
 
 God powers:
@@ -275,6 +277,14 @@ God powers:
 - **Black-box diagnostics** — ultimate failures save `./diagnostics/<ts>/` bundles
   (screenshot + HTML + URL + traceback + *redacted* config), safe for GitHub issues.
 - **Stealth jitter** — human mouse drift before clicks, randomised delays everywhere.
+- **HYDRA race** — OMEGA+ tools run 2-3 parallel browser heads; first success wins
+  (`--heads N`, tools only — booking stays single-headed so you never double-book).
+- **Cookie vault** — login once, `./profiles/session_vault.json` transplants the
+  session into fresh heads (base64-obscured; treat like a password).
+- **Adaptive pacer** — measures site latency and auto-tunes delays (fast site = faster bot).
+- **Verified clicks** — submit clicks confirm the page actually changed, else escalate.
+- **Captcha ensemble voting** — OCR readings across variants/PSMs/rotations vote; majority wins.
+- **Doomsday budget** — `brute.max_tool_minutes` kills runaway runs (0 = immortal).
 
 ## 🛠️ Troubleshooting
 

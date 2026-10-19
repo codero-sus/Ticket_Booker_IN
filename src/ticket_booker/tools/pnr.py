@@ -63,7 +63,7 @@ def _collect(ctx: BruteContext, pnr: str) -> dict:
         raise RuntimeError("PNR input box not found.")
     human_delay(0.5, 1.2)
     ctx.solve_captchas_on_page()
-    if not ctx.click_text("Submit", "Get Status", "Search", "Check Status"):
+    if not ctx.click_text("Submit", "Get Status", "Search", "Check Status", verify_change=True):
         raise RuntimeError("Submit button not found.")
     human_delay(2.0, 4.0)
 
@@ -76,7 +76,7 @@ def _collect(ctx: BruteContext, pnr: str) -> dict:
         if hit:
             break
         if ctx.solve_captchas_on_page():
-            ctx.click_text("Submit", "Get Status", "Search")
+            ctx.click_text("Submit", "Get Status", "Search", verify_change=True)
             human_delay(2.0, 4.0)
         else:
             break

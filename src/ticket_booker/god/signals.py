@@ -44,6 +44,37 @@ BROWSER_DEATH_RE = re.compile(
 )
 
 
+INT64_MAX = 9223372036854775807  # RADIOACTIVE LVL
+
+
+def tier_of(level) -> int:
+    """1-5 verbatim, 6-9 OMEGA(6), 10+ RADIOACTIVE(7)."""
+    try:
+        level = int(level)
+    except (TypeError, ValueError):
+        return 3
+    if level <= 5:
+        return max(1, level)
+    if level <= 9:
+        return 6
+    return 7
+
+
+def title_for_level(level) -> str:
+    titles = {1: "CALM", 2: "NORMAL", 3: "BRUTE", 4: "GOD", 5: "ULTIMATE GOD"}
+    try:
+        level = int(level)
+    except (TypeError, ValueError):
+        return "GOD"
+    if level in titles:
+        return titles[level]
+    if level <= 9:
+        return f"OMEGA GOD^{level - 4}"
+    if level >= INT64_MAX:
+        return "RADIOACTIVE LVL 9223372036854775807"
+    return f"RADIOACTIVE LVL {level}"
+
+
 def normalize(text: str) -> str:
     text = (text or "").lower()
     text = re.sub(r"[^a-z0-9 ]+", " ", text)

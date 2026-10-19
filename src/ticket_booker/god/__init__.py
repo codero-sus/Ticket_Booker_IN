@@ -16,6 +16,9 @@ Brutality levels (config `brute.level`, CLI `--brutality`, WebUI selector):
 
 from .diagnostics import redact_config, redact_text, save_bundle
 from .engine import god_run
+from .hydra import heads_for, hydra_race
+from .pacer import Pacer
+from .session_vault import load_vault, save_vault, vault_status
 from .memory import SelectorMemory
 from .signals import (
     best_match,
@@ -24,6 +27,8 @@ from .signals import (
     escalate_delay,
     looks_like_browser_death,
     normalize,
+    tier_of,
+    title_for_level,
 )
 
 __all__ = [
@@ -34,8 +39,16 @@ __all__ = [
     "diagnostics",
     "escalate_delay",
     "god_run",
+    "heads_for",
+    "hydra_race",
+    "Pacer",
+    "load_vault",
+    "save_vault",
+    "vault_status",
     "looks_like_browser_death",
     "normalize",
+    "tier_of",
+    "title_for_level",
     "redact_config",
     "redact_text",
     "save_bundle",

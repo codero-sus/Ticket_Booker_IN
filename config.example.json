@@ -87,8 +87,10 @@
     "debug_dir": "./screenshots/captcha"
   },
   "brute": {
-    "_comment": "ULTIMATE BRUTE GOD dial: 1 calm, 2 normal, 3 BRUTE, 4 GOD, 5 ULTIMATE.",
+    "_comment": "GOD dial 1-5, 6-9 OMEGA, 10+ RADIOACTIVE (max 9223372036854775807).",
     "level": 4,
+    "hydra_heads": 0,
+    "max_tool_minutes": 25,
     "memory_file": "./profiles/selector_memory.json",
     "diagnostics": true,
     "keepalive_checks": true,

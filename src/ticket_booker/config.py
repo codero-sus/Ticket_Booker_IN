@@ -188,8 +188,10 @@ class CaptchaCfg(BaseModel):
 
 
 class BruteCfg(BaseModel):
-    """ULTIMATE BRUTE GOD dial. 1 calm ... 5 no mercy. Default 4 (GOD)."""
-    level: int = Field(4, ge=1, le=5)
+    """GOD dial: 1-5 classic, 6-9 OMEGA, 10+ RADIOACTIVE. Default 4 (GOD)."""
+    level: int = Field(4, ge=1, le=9223372036854775807)
+    hydra_heads: int = Field(0, ge=0, le=3)  # 0 = auto by tier
+    max_tool_minutes: int = Field(25, ge=0, le=180)  # 0 = immortal, no doomsday
     memory_file: str = "./profiles/selector_memory.json"
     diagnostics: bool = True
     keepalive_checks: bool = True
