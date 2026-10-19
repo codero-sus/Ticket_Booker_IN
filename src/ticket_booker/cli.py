@@ -17,6 +17,8 @@ def _add_common(sp, config_required: bool = True):
         sp.add_argument("--config", "-c", default="config.json", help="Config file (json/yaml). Default: config.json")
     sp.add_argument("--headless", action="store_true", help="Run browser headless (uses virtual display on servers).")
     sp.add_argument("--headed", action="store_true", help="Force visible browser (overrides config).")
+    sp.add_argument("--brutality", type=int, choices=[1, 2, 3, 4, 5], default=None,
+                    help="GOD dial 1(calm)-5(ultimate). Overrides config brute.level.")
     sp.add_argument("-v", "--verbose", action="store_true")
 
 
@@ -73,6 +75,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("-v", "--verbose", action="store_true")
 
     return p
+
+
+def _apply_brutality(args, cfg) -> None:
+    level = getattr(args, "brutality", None)
+    if level:
+        cfg.brute.level = int(level)
 
 
 def _resolve_headless(args, cfg) -> bool:
@@ -219,6 +227,7 @@ def cmd_login(args) -> int:
     from .irctc.booker import IRCTCBooker
 
     cfg = _load_cfg(args)
+    _apply_brutality(args, cfg)
     ok = IRCTCBooker(cfg, headless=_resolve_headless(args, cfg)).login_only()
     print("LOGIN OK" if ok else "LOGIN FAILED")
     return 0 if ok else 1
@@ -228,6 +237,7 @@ def cmd_search(args) -> int:
     from .irctc.booker import IRCTCBooker
 
     cfg = _load_cfg(args)
+    _apply_brutality(args, cfg)
     ok = IRCTCBooker(cfg, headless=_resolve_headless(args, cfg)).search_only()
     return 0 if ok else 1
 
@@ -236,6 +246,7 @@ def cmd_book(args, force_tatkal: bool = False) -> int:
     from .irctc.booker import IRCTCBooker
 
     cfg = _load_cfg(args)
+    _apply_brutality(args, cfg)
     if force_tatkal:
         cfg.tatkal.enabled = True
         if cfg.journey.quota == "GN":
@@ -268,6 +279,7 @@ def cmd_tool(args) -> int:
         return 2
     fn, _desc = TOOLS[name]
     cfg = _load_cfg(args)
+    _apply_brutality(args, cfg)
     headless = _resolve_headless(args, cfg)
     kwargs: dict = {"headless": headless}
     if name == "pnr":

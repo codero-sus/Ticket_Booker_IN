@@ -85,5 +85,13 @@
     },
     "on_failure": "manual",
     "debug_dir": "./screenshots/captcha"
+  },
+  "brute": {
+    "_comment": "ULTIMATE BRUTE GOD dial: 1 calm, 2 normal, 3 BRUTE, 4 GOD, 5 ULTIMATE.",
+    "level": 4,
+    "memory_file": "./profiles/selector_memory.json",
+    "diagnostics": true,
+    "keepalive_checks": true,
+    "proxy_list": []
   }
 }

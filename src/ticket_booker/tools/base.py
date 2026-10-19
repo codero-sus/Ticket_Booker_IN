@@ -1,30 +1,47 @@
-"""BRUTE engine — resilient primitives every scraper tool is built on.
+"""BRUTE engine + ULTIMATE GOD upgrades — resilient primitives for every tool.
 
 Design (inspired by the sample grabber script):
-  * NEVER trust exact DOM structure — search the whole page by visible TEXT
-    (`filter(has_text=...)`, XPath contains(.,...)). If IRCTC moves a button
-    from div #3 to div #9, text search still finds it.
-  * Random human delays between every action (2-10s style), configurable.
+  * NEVER trust exact DOM structure — search the whole page by visible TEXT.
+  * Random human delays between every action, mouse wiggle before clicks.
   * Every action retries with: re-find -> reload page -> re-login -> retry.
   * Any captcha anywhere on the page gets auto-solved (OCR -> service).
   * Every failure saves screenshots; every run saves a report to ./reports/.
 
-If it is not BRUTE, it starves and dies. So this is BRUTE.
+GOD upgrades (brutality >= 3):
+  * Self-healing selectors: SelectorMemory learns which strategy works per
+    action and tries winners first — across runs.
+  * Fuzzy fallback: "Submitt", "SUBMIT »", "Get Statuss" still match.
+  * Block/ban detection + session keepalive inside every retry ladder.
+  * Diagnostics black-box bundle on ultimate failure (secrets redacted).
+  * Level 5: screenshot every step, max retries, no mercy.
+
+If it is not BRUTE, it starves and dies. So this is BRUTE. TOO MUCH BRUTE.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import random
 import re
 import time
+import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
 from ..browser import launch_browser
 from ..captcha.manager import AutoCaptcha
+from ..god.diagnostics import save_bundle
+from ..god.memory import SelectorMemory
+from ..god.signals import (
+    best_match,
+    detect_block,
+    detect_session_dead,
+    escalate_delay,
+    looks_like_browser_death,
+)
 from ..utils import ensure_dir, human_delay, save_bytes, save_screenshot, timestamp
 
 log = logging.getLogger("ticket_booker.tools")
@@ -43,6 +60,17 @@ CAPTCHA_INPUT_SELS = (
     "input[id*='captcha' i]",
 )
 
+# Minimum ladder retries per brutality level (god raises the floor)
+MIN_RETRIES = {1: 1, 2: 2, 3: 3, 4: 4, 5: 6}
+
+
+class BlockedError(Exception):
+    """Raised when the site is actively blocking us (ban/rate-limit/wall)."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"Blocked: {reason}")
+        self.reason = reason
+
 
 @dataclass
 class ToolResult:
@@ -52,15 +80,29 @@ class ToolResult:
     report_path: str = ""
 
 
-def run_with_browser(cfg, headless: bool | None, fn: Callable, *args, **kwargs):
-    """Open one Camoufox session and run fn(BruteContext, *args)."""
+def _plain_run(cfg, headless: bool | None, fn: Callable, *args, **kwargs):
+    """One Camoufox session, no god ladder (used BY the god ladder)."""
     with launch_browser(cfg.browser, headless) as session:
         ctx = BruteContext(cfg, session.page, headless or cfg.browser.headless)
         return fn(ctx, *args, **kwargs)
 
 
+def run_with_browser(cfg, headless: bool | None, fn: Callable, *args, **kwargs):
+    """Open Camoufox session(s) and run fn(BruteContext, *args).
+
+    Brutality >= 4 routes through the GOD relaunch ladder (fresh browser +
+    proxy rotation). Lower levels run a single session.
+    """
+    level = int(getattr(getattr(cfg, "brute", None), "level", 3) or 3)
+    if level >= 4:
+        from ..god.engine import god_run
+
+        return god_run(cfg, headless, lambda ctx: fn(ctx, *args, **kwargs))
+    return _plain_run(cfg, headless, fn, *args, **kwargs)
+
+
 class BruteContext:
-    """A page + config + captcha solver with brute-force helpers."""
+    """A page + config + captcha solver with brute-force god helpers."""
 
     def __init__(self, cfg, page, headless: bool = False) -> None:
         self.cfg = cfg
@@ -69,6 +111,18 @@ class BruteContext:
         self.captcha = AutoCaptcha(cfg.captcha)
         self.reports_dir = ensure_dir("./reports")
         self.shots_dir = ensure_dir("./screenshots/tools")
+        self.diag_dir = ensure_dir("./diagnostics")
+
+        brute = getattr(cfg, "brute", None)
+        self.brutality: int = int(getattr(brute, "level", 3) or 3)
+        mem_file = getattr(brute, "memory_file", "") or "./profiles/selector_memory.json"
+        self.memory = SelectorMemory(mem_file) if self.brutality >= 3 else None
+        self.keepalive = bool(getattr(brute, "keepalive_checks", True)) and self.brutality >= 2
+        self.diagnostics_on = bool(getattr(brute, "diagnostics", True))
+        self._last_captcha_hash: str | None = None
+        self._same_captcha_count = 0
+        self._relogins_this_run = 0
+        log.info("⚡ BRUTE GOD engine engaged (level %d/5)", self.brutality)
 
     # ---------------- core navigation ----------------
 
@@ -81,6 +135,8 @@ class BruteContext:
                     self.page.goto(url, wait_until="domcontentloaded", timeout=45000)
                     human_delay(*wait)
                     self.dismiss_popups()
+                    if self.brutality >= 5:
+                        self.shot("goto")
                     return True
                 except Exception as exc:
                     log.warning("goto %s failed: %s", url, exc)
@@ -112,8 +168,64 @@ class BruteContext:
     def shot(self, name: str) -> None:
         save_screenshot(self.page, name, self.shots_dir)
 
+    # ---------------- self-healing strategy runner ----------------
+
+    def _order(self, key: str, strategies: list[tuple[str, Callable]]) -> list[tuple[str, Callable]]:
+        if not self.memory:
+            return strategies
+        pref = self.memory.preferred(key)
+        if pref is None:
+            return strategies
+        return sorted(strategies, key=lambda s: 0 if s[0] == pref else 1)
+
+    def _record_win(self, key: str, sid: str) -> None:
+        if self.memory:
+            try:
+                self.memory.record(key, sid)
+            except Exception:
+                pass
+
+    def _first_visible(self, sel: str, timeout: int = 900):
+        """Locator if visible, else None. Never raises."""
+        try:
+            loc = self.page.locator(sel).first
+            if loc.count() and loc.is_visible(timeout=timeout):
+                return loc
+        except Exception:
+            pass
+        return None
+
+    def _wiggle(self, loc) -> None:
+        """Human mouse drift toward the element (god stealth, level 3+)."""
+        if self.brutality < 3:
+            return
+        try:
+            box = loc.bounding_box(timeout=1500)
+            if not box:
+                return
+            x = box["x"] + box["width"] / 2 + random.uniform(-8, 8)
+            y = box["y"] + box["height"] / 2 + random.uniform(-5, 5)
+            self.page.mouse.move(max(1, x), max(1, y), steps=random.randint(8, 22))
+            time.sleep(random.uniform(0.05, 0.3))
+        except Exception:
+            pass
+
+    def _scroll_click(self, loc, force: bool = False, what: str = "") -> bool:
+        try:
+            loc.scroll_into_view_if_needed(timeout=3000)
+            self._wiggle(loc)
+            human_delay(0.2, 0.8)
+            loc.click(timeout=6000, force=force)
+            if what:
+                log.info("🖱️ Clicked '%s'", what)
+            if self.brutality >= 5:
+                self.shot("click")
+            return True
+        except Exception as exc:
+            log.debug("click '%s' failed: %s", what, exc)
+            return False
+
     # ---------------- BRUTE text-first finders ----------------
-    # (the sample script's superpower: filter(has_text=...) over the whole page)
 
     def page_text(self) -> str:
         try:
@@ -141,134 +253,209 @@ class BruteContext:
     def find_text(self, *phrases: str):
         """Whole-page text search -> first visible locator, or None."""
         for phrase in phrases:
-            # Strategy 1: Playwright text engine (fast, layout-proof)
-            try:
-                loc = self.page.get_by_text(phrase, exact=False).first
-                if loc.count() and loc.is_visible(timeout=1200):
-                    return loc
-            except Exception:
-                pass
-            # Strategy 2: filter() over common containers (sample-script style)
-            for container in ("div", "span", "td", "li", "p", "h1", "h2", "h3", "h4", "a", "button", "th", "label"):
+            key = f"find:{phrase.lower()}"
+            strategies: list[tuple[str, Callable]] = [
+                ("text", lambda p=phrase: self._first_visible(f"text={p!r}", 900)),
+                ("filter", lambda p=phrase: self._filter_text(p)),
+                ("xpath", lambda p=phrase: self._xpath_text(p)),
+            ]
+            for sid, thunk in self._order(key, strategies):
                 try:
-                    loc = self.page.locator(container).filter(has_text=phrase).first
-                    if loc.count() and loc.is_visible(timeout=700):
-                        return loc
+                    loc = thunk()
                 except Exception:
                     continue
-            # Strategy 3: XPath contains() — the last-resort brute hammer
+                if loc is not None:
+                    self._record_win(key, sid)
+                    return loc
+        # GOD fuzzy fallback: match a *similar* visible line
+        if self.brutality >= 3:
+            return self._fuzzy_find(phrases)
+        return None
+
+    def _filter_text(self, phrase: str):
+        for container in ("div", "span", "td", "li", "p", "h1", "h2", "h3", "h4",
+                          "a", "button", "th", "label"):
             try:
-                xp = (
-                    f"//*[contains(normalize-space(.), '{phrase}') "
-                    f"and not(self::script) and not(self::style)]"
-                )
-                loc = self.page.locator(f"xpath={xp}").first
-                if loc.count() and loc.is_visible(timeout=1200):
+                loc = self.page.locator(container).filter(has_text=phrase).first
+                if loc.count() and loc.is_visible(timeout=600):
                     return loc
             except Exception:
-                pass
+                continue
+        return None
+
+    def _xpath_text(self, phrase: str):
+        safe = phrase.replace("'", "")
+        xp = f"//*[contains(normalize-space(.), '{safe}') and not(self::script) and not(self::style)]"
+        return self._first_visible(f"xpath={xp}", 900)
+
+    def _fuzzy_find(self, phrases: tuple[str, ...]):
+        try:
+            lines = [ln.strip() for ln in self.page_text().splitlines()]
+            lines = [ln for ln in lines if 2 <= len(ln) <= 80][:400]
+            for phrase in phrases:
+                hit = best_match(phrase, lines, cutoff=0.72)
+                if hit:
+                    log.info("🔮 Fuzzy-matched '%s' -> '%s'", phrase, hit[0][:60])
+                    return self._first_visible(f"text={hit[0]!r}", 1200)
+        except Exception as exc:
+            log.debug("fuzzy find failed: %s", exc)
         return None
 
     def click_text(self, *phrases: str, timeout_each: int = 2500) -> bool:
         """Click anything (button/link/tab/cell) showing one of the phrases."""
         for phrase in phrases:
-            # 1) proper buttons/links first (least likely to misclick)
-            for sel in (
+            key = f"click:{phrase.lower()}"
+            sels = [
                 f"button:has-text('{phrase}')",
                 f"a:has-text('{phrase}')",
                 f"input[value*='{phrase}']",
                 f"[role='button']:has-text('{phrase}')",
                 f"[role='tab']:has-text('{phrase}')",
-            ):
+            ]
+            strategies: list[tuple[str, Callable]] = [
+                (f"sel{i}", (lambda s: lambda: self._first_visible(s))(s)) for i, s in enumerate(sels)
+            ]
+            strategies.append(("filter", lambda p=phrase: self._filter_clickable(p)))
+            strategies.append(("xpath", lambda p=phrase: self._xpath_clickable(p)))
+            for sid, thunk in self._order(key, strategies):
                 try:
-                    loc = self.page.locator(sel).first
-                    if loc.count() and loc.is_visible(timeout=900):
-                        loc.scroll_into_view_if_needed(timeout=3000)
-                        human_delay(0.3, 0.9)
-                        loc.click(timeout=6000)
-                        log.info("🖱️ Clicked '%s'", phrase)
-                        return True
+                    loc = thunk()
                 except Exception:
                     continue
-            # 2) sample-script style: filter over clickables
-            try:
-                loc = self.page.locator("button, a, div, span, td, li").filter(
-                    has_text=phrase
-                ).first
-                if loc.count() and loc.is_visible(timeout=timeout_each):
-                    loc.scroll_into_view_if_needed(timeout=3000)
-                    human_delay(0.3, 0.9)
-                    loc.click(timeout=6000, force=True)
-                    log.info("🖱️ Clicked '%s' (via filter)", phrase)
+                if loc is None:
+                    continue
+                if self._scroll_click(loc, force=sid in ("filter", "xpath"), what=phrase):
+                    self._record_win(key, sid)
                     return True
-            except Exception:
-                pass
-            # 3) XPath hammer on clickables
-            try:
-                xp = (
-                    f"//*[self::button or self::a or self::input or @role='button' or @role='tab']"
-                    f"[contains(normalize-space(.), '{phrase}') or contains(@value, '{phrase}')]"
-                )
-                loc = self.page.locator(f"xpath={xp}").first
-                if loc.count() and loc.is_visible(timeout=timeout_each):
-                    loc.scroll_into_view_if_needed(timeout=3000)
-                    loc.click(timeout=6000, force=True)
-                    log.info("🖱️ Clicked '%s' (via xpath)", phrase)
-                    return True
-            except Exception:
-                pass
+        if self.brutality >= 3 and self._fuzzy_click(phrases):
+            return True
         log.warning("click_text found none of %s", phrases)
+        return False
+
+    def _filter_clickable(self, phrase: str):
+        try:
+            loc = self.page.locator("button, a, div, span, td, li").filter(has_text=phrase).first
+            if loc.count() and loc.is_visible(timeout=1200):
+                return loc
+        except Exception:
+            pass
+        return None
+
+    def _xpath_clickable(self, phrase: str):
+        safe = phrase.replace("'", "")
+        xp = (
+            "//*[self::button or self::a or self::input or @role='button' or @role='tab']"
+            f"[contains(normalize-space(.), '{safe}') or contains(@value, '{safe}')]"
+        )
+        return self._first_visible(f"xpath={xp}", 1200)
+
+    def _fuzzy_click(self, phrases: tuple[str, ...]) -> bool:
+        try:
+            loc = self.page.locator(
+                "button, a, input[type=submit], input[type=button], [role=button], [role=tab]"
+            )
+            n = min(loc.count(), 80)
+            texts: list[str] = []
+            for i in range(n):
+                try:
+                    el = loc.nth(i)
+                    t = ((el.inner_text(timeout=700) or "") + " " + (el.get_attribute("value") or "")).strip()
+                    texts.append(t)
+                except Exception:
+                    texts.append("")
+            options = [t for t in texts if t]
+            for phrase in phrases:
+                hit = best_match(phrase, options, cutoff=0.6)
+                if hit:
+                    log.info("🔮 Fuzzy-click '%s' -> '%s'", phrase, hit[0][:60])
+                    el = loc.nth(texts.index(hit[0]))
+                    if el.count() and self._scroll_click(el, force=True, what=hit[0][:40]):
+                        return True
+        except Exception as exc:
+            log.debug("fuzzy click failed: %s", exc)
         return False
 
     def fill_near_text(self, label_phrases: tuple[str, ...] | list[str], value: str) -> bool:
         """Find an input box by its label/placeholder/text and fill it. BRUTE."""
         for label in label_phrases:
-            # 1) proper label association
-            try:
-                loc = self.page.get_by_label(label, exact=False).first
-                if loc.count() and loc.is_visible(timeout=900):
-                    return self._do_fill(loc, value, label)
-            except Exception:
-                pass
-            # 2) placeholder match
-            for sel in (
-                f"input[placeholder*='{label}' i]",
-                f"textarea[placeholder*='{label}' i]",
-            ):
+            key = f"fill:{label.lower()}"
+            safe = label.replace("'", "")
+            strategies: list[tuple[str, Callable]] = [
+                ("label", lambda l=label: self._by_label(l)),
+                ("placeholder", lambda l=label: (
+                    self._first_visible(f"input[placeholder*='{l}' i]", 700)
+                    or self._first_visible(f"textarea[placeholder*='{l}' i]", 700)
+                )),
+                ("xpath-follow", lambda s=safe: self._first_visible(
+                    f"xpath=//*[contains(normalize-space(.), '{s}')]"
+                    "/following::input[not(@type='hidden' or @type='checkbox' or @type='radio')][1]", 900)),
+                ("xpath-child", lambda s=safe: self._first_visible(
+                    f"xpath=//*[contains(normalize-space(.), '{s}')]"
+                    "//input[not(@type='hidden' or @type='checkbox' or @type='radio')][1]", 900)),
+            ]
+            for sid, thunk in self._order(key, strategies):
                 try:
-                    loc = self.page.locator(sel).first
-                    if loc.count() and loc.is_visible(timeout=900):
-                        return self._do_fill(loc, value, label)
+                    loc = thunk()
                 except Exception:
                     continue
-            # 3) XPath: input following an element containing the label text
-            try:
-                xp = (
-                    f"//*[contains(normalize-space(.), '{label}')]"
-                    f"/following::input[not(@type='hidden' or @type='checkbox' or @type='radio')][1]"
-                )
-                loc = self.page.locator(f"xpath={xp}").first
-                if loc.count() and loc.is_visible(timeout=1200):
-                    return self._do_fill(loc, value, label)
-            except Exception:
-                pass
-            # 4) XPath: input inside the same labelled container
-            try:
-                xp = (
-                    f"//*[contains(normalize-space(.), '{label}')]"
-                    f"//input[not(@type='hidden' or @type='checkbox' or @type='radio')][1]"
-                )
-                loc = self.page.locator(f"xpath={xp}").first
-                if loc.count() and loc.is_visible(timeout=1200):
-                    return self._do_fill(loc, value, label)
-            except Exception:
-                pass
+                if loc is not None and self._do_fill(loc, value, label):
+                    self._record_win(key, sid)
+                    return True
+        if self.brutality >= 3 and self._fuzzy_fill(label_phrases, value):
+            return True
         log.warning("fill_near_text found no input for %s", label_phrases)
+        return False
+
+    def _by_label(self, label: str):
+        try:
+            loc = self.page.get_by_label(label, exact=False).first
+            if loc.count() and loc.is_visible(timeout=700):
+                return loc
+        except Exception:
+            pass
+        return None
+
+    def _fuzzy_fill(self, labels, value: str) -> bool:
+        try:
+            cands: list[str] = []
+            try:
+                labs = self.page.locator("label")
+                for i in range(min(labs.count(), 60)):
+                    try:
+                        cands.append(labs.nth(i).inner_text(timeout=600) or "")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            try:
+                ins = self.page.locator("input, textarea")
+                for i in range(min(ins.count(), 60)):
+                    try:
+                        cands.append(ins.nth(i).get_attribute("placeholder") or "")
+                        cands.append(ins.nth(i).get_attribute("aria-label") or "")
+                        cands.append(ins.nth(i).get_attribute("name") or "")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            options = [c.strip() for c in cands if c and c.strip()]
+            for label in labels:
+                hit = best_match(label, options, cutoff=0.6)
+                if hit:
+                    log.info("🔮 Fuzzy-fill '%s' -> '%s'", label, hit[0][:50])
+                    loc = (self._by_label(hit[0])
+                           or self._first_visible(f"input[placeholder*='{hit[0]}' i]", 900)
+                           or self._first_visible(f"textarea[placeholder*='{hit[0]}' i]", 900))
+                    if loc is not None and self._do_fill(loc, value, label):
+                        return True
+        except Exception as exc:
+            log.debug("fuzzy fill failed: %s", exc)
         return False
 
     def _do_fill(self, loc, value: str, label: str) -> bool:
         try:
             loc.scroll_into_view_if_needed(timeout=3000)
+            self._wiggle(loc)
             loc.click(timeout=4000)
             try:
                 loc.fill("", timeout=2500)
@@ -278,6 +465,8 @@ class BruteContext:
             time.sleep(0.3)
             loc.press_sequentially(value, delay=random.randint(20, 70), timeout=12000)
             log.info("⌨️ Filled '%s'", label)
+            if self.brutality >= 5:
+                self.shot("fill")
             return True
         except Exception as exc:
             log.debug("fill '%s' failed: %s", label, exc)
@@ -339,6 +528,19 @@ class BruteContext:
             except Exception as exc:
                 log.debug("captcha screenshot failed: %s", exc)
                 break
+            # GOD: identical image after refresh = refresh control is fake; reload.
+            digest = hashlib.md5(img_bytes).hexdigest()
+            if digest == self._last_captcha_hash:
+                self._same_captcha_count += 1
+                if self._same_captcha_count >= 2:
+                    log.warning("🔐 Captcha image unchanged after refresh — reloading page...")
+                    self.reload()
+                    self._same_captcha_count = 0
+                    human_delay(1.5, 3.0)
+                    continue
+            else:
+                self._last_captcha_hash = digest
+                self._same_captcha_count = 0
             try:
                 save_bytes(img_bytes, "tool_captcha.png", self.cfg.captcha.debug_dir)
             except Exception:
@@ -359,7 +561,6 @@ class BruteContext:
                 except Exception:
                     continue
             if not filled:
-                # Brute: any empty text input near the captcha image
                 try:
                     box = self.page.locator("input[type='text'], input:not([type])").last
                     if box.count():
@@ -373,7 +574,6 @@ class BruteContext:
             else:
                 log.warning("Captcha found but no input box — stopping.")
                 break
-        # Also handle reCAPTCHA if some gateway embeds it
         try:
             from ..captcha.recaptcha_solver import solve_recaptcha_if_present
 
@@ -387,7 +587,28 @@ class BruteContext:
             log.debug("recaptcha check skipped: %s", exc)
         return solved
 
-    # ---------------- BRUTE retry wrapper ----------------
+    # ---------------- GOD keepalive + retry ladder ----------------
+
+    def _heartbeat(self) -> None:
+        """Cooperative keepalive: block/ban/session probe before each attempt.
+
+        Raises BlockedError on hard blocks (god ladder rotates proxy /
+        relaunches). Auto re-logs on dead sessions (max 2 per context).
+        """
+        if not self.keepalive:
+            return
+        try:
+            text = self.page_text()
+        except Exception:
+            return  # page unreadable — the ladder's reload will handle it
+        reason = detect_block(text)
+        if reason:
+            self.shot("blocked")
+            raise BlockedError(reason)
+        if detect_session_dead(text) and self._relogins_this_run < 2:
+            log.warning("💤 Keepalive: session looks dead — re-logging in...")
+            self._relogins_this_run += 1
+            self.ensure_login()
 
     def brute(
         self,
@@ -397,24 +618,54 @@ class BruteContext:
         reload_between: bool = True,
         relogin_once: bool = False,
     ) -> Any:
-        """Run fn with reload/re-login recovery. Raises last error if all fail."""
+        """Run fn with the GOD ladder: heartbeat -> run -> reload -> re-login.
+
+        God raises the retry floor by brutality. Browser death aborts the
+        ladder immediately so god_run() can relaunch a FRESH browser instead
+        of flogging a corpse. Ultimate failure writes a diagnostics bundle.
+        """
+        retries = max(int(retries), MIN_RETRIES.get(self.brutality, 3))
         last: Exception | None = None
+        relogged = False
         for attempt in range(1, retries + 1):
             try:
                 if attempt > 1:
                     log.info("🔁 %s — brute attempt %d/%d", what, attempt, retries)
+                self._heartbeat()
                 return fn()
+            except BlockedError:
+                raise
             except Exception as exc:
                 last = exc
-                log.warning("⚠️ %s failed (attempt %d): %s", what, attempt, exc)
+                if looks_like_browser_death(exc):
+                    log.error("💀 Browser died mid-ladder — aborting for fresh relaunch.")
+                    raise
+                log.warning("⚠️ %s failed (attempt %d): %s", what, attempt, str(exc)[:200])
                 self.shot(f"brute_fail_{re.sub(r'[^a-z0-9]+', '_', what.lower())}_{attempt}")
-                if relogin_once and attempt == 2:
+                if relogin_once and not relogged and attempt >= 2:
+                    relogged = True
                     self.ensure_login()
                 if reload_between and attempt < retries:
                     self.reload()
-                human_delay(1.5, 4.0)
+                if attempt < retries:
+                    time.sleep(escalate_delay(attempt))
         assert last is not None
+        self._save_diagnostics(what, last)
         raise last
+
+    def _save_diagnostics(self, what: str, exc: BaseException) -> None:
+        if not self.diagnostics_on:
+            return
+        try:
+            save_bundle(
+                self.diag_dir, f"{what}_FAILED",
+                page=self.page,
+                extra={"error": str(exc)[:1000],
+                       "traceback": traceback.format_exc()[-6000:],
+                       "config": self.cfg},
+            )
+        except Exception as e2:
+            log.debug("diagnostics failed: %s", e2)
 
     def ensure_login(self) -> bool:
         """Make sure IRCTC session is alive; login (auto captcha) if not."""

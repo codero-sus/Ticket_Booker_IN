@@ -187,6 +187,15 @@ class CaptchaCfg(BaseModel):
     debug_dir: str = "./screenshots/captcha"
 
 
+class BruteCfg(BaseModel):
+    """ULTIMATE BRUTE GOD dial. 1 calm ... 5 no mercy. Default 4 (GOD)."""
+    level: int = Field(4, ge=1, le=5)
+    memory_file: str = "./profiles/selector_memory.json"
+    diagnostics: bool = True
+    keepalive_checks: bool = True
+    proxy_list: list[dict[str, str]] = []
+
+
 class AppConfig(BaseModel):
     irctc: IrctcAuth = IrctcAuth()
     journey: Journey
@@ -196,6 +205,7 @@ class AppConfig(BaseModel):
     tatkal: Tatkal = Tatkal()
     browser: BrowserCfg = BrowserCfg()
     captcha: CaptchaCfg = CaptchaCfg()
+    brute: BruteCfg = BruteCfg()
 
     @field_validator("passengers")
     @classmethod
