@@ -17,8 +17,8 @@ def _add_common(sp, config_required: bool = True):
         sp.add_argument("--config", "-c", default="config.json", help="Config file (json/yaml). Default: config.json")
     sp.add_argument("--headless", action="store_true", help="Run browser headless (uses virtual display on servers).")
     sp.add_argument("--headed", action="store_true", help="Force visible browser (overrides config).")
-    sp.add_argument("--brutality", type=int, choices=[1, 2, 3, 4, 5], default=None,
-                    help="GOD dial 1(calm)-5(ultimate). Overrides config brute.level.")
+    sp.add_argument("--brutality", type=int, default=None,
+                    help="GOD dial 1-5, 6-9 OMEGA, 10+ RADIOACTIVE (max 9223372036854775807).")
     sp.add_argument("-v", "--verbose", action="store_true")
 
 
@@ -65,6 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--pnr", default="", help="PNR number (pnr tool).")
     s.add_argument("--train", default="", help="Train number override (schedule/live/availability).")
     s.add_argument("--station", default="", help="Station code filter (live tool).")
+    s.add_argument("--heads", type=int, default=0, help="HYDRA heads 0(auto)-3 (OMEGA+, tools only).")
     _add_common(s)
 
     s = sub.add_parser("webui", help="Launch the easy WebUI dashboard (auto-opens in Chrome).")
@@ -188,6 +189,26 @@ def cmd_doctor(args) -> int:
         except Exception as exc:
             check(f"config {args.config}", False, str(exc)[:220])
 
+    try:
+        from .god.session_vault import vault_status
+        from .god.signals import title_for_level
+        mem_keys, lvl = 0, None
+        _mp = Path("./profiles/selector_memory.json")
+        if _mp.exists():
+            try:
+                mem_keys = len(json.loads(_mp.read_text(encoding="utf-8") or "{}"))
+            except Exception:
+                mem_keys = 0
+        if args.config and Path(args.config).exists():
+            try:
+                from .config import load_config as _lc
+                lvl = _lc(args.config).brute.level
+            except Exception:
+                lvl = None
+        print(f"GOD: level={lvl} ({title_for_level(lvl) if lvl else 'no config'}) | "
+              f"memory_keys={mem_keys} | vault={vault_status().get('count', 0)} cookies")
+    except Exception as exc:
+        print(f"GOD: status unavailable ({exc})")
     print("-" * 60)
     print("doctor: " + ("ALL GOOD" if ok else "issues found (see FAIL lines)"))
     return 0 if ok else 1
@@ -280,6 +301,8 @@ def cmd_tool(args) -> int:
     fn, _desc = TOOLS[name]
     cfg = _load_cfg(args)
     _apply_brutality(args, cfg)
+    if getattr(args, "heads", None):
+        cfg.brute.hydra_heads = max(0, min(3, int(args.heads)))
     headless = _resolve_headless(args, cfg)
     kwargs: dict = {"headless": headless}
     if name == "pnr":

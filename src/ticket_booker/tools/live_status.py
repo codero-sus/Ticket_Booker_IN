@@ -51,7 +51,7 @@ def _collect(ctx: BruteContext, train_no: str, station: str) -> dict:
         ctx.fill_near_text(("Station", "From Station", "Select Station"), station)
         human_delay(0.5, 1.0)
     ctx.solve_captchas_on_page()
-    if not ctx.click_text("Get Status", "Search", "Submit", "Show", "Go", "Spot"):
+    if not ctx.click_text("Get Status", "Search", "Submit", "Show", "Go", "Spot", verify_change=True):
         raise RuntimeError("Status button not found.")
     human_delay(2.5, 5.0)
     for _ in range(2):
@@ -59,7 +59,7 @@ def _collect(ctx: BruteContext, train_no: str, station: str) -> dict:
                          "Expected", "Station", "Invalid", "not found", timeout_s=20):
             break
         if ctx.solve_captchas_on_page():
-            ctx.click_text("Get Status", "Search", "Submit", "Go")
+            ctx.click_text("Get Status", "Search", "Submit", "Go", verify_change=True)
             human_delay(2.5, 5.0)
     body = ctx.page_text()
     data = parse_live_body(body)

@@ -12,12 +12,13 @@ from __future__ import annotations
 import logging
 import time
 
-from .signals import escalate_delay, looks_like_browser_death
+from .signals import escalate_delay, looks_like_browser_death, tier_of
 
 log = logging.getLogger("ticket_booker.god.engine")
 
 # Fresh-browser rounds per brutality level
-ROUNDS = {1: 1, 2: 1, 3: 2, 4: 3, 5: 4}
+ROUNDS_BY_TIER = {1: 1, 2: 1, 3: 2, 4: 3, 5: 4, 6: 4, 7: 5}
+ROUNDS = ROUNDS_BY_TIER  # back-compat alias
 
 
 def _level(cfg) -> int:
@@ -36,7 +37,7 @@ def god_run(cfg, headless: bool | None, fn, _runner=None):
 
     level = _level(cfg)
     runner = _runner or _plain_run
-    rounds = ROUNDS.get(level, 2)
+    rounds = ROUNDS_BY_TIER.get(tier_of(level), 2)
     proxies = list(getattr(getattr(cfg, "brute", None), "proxy_list", None) or [])
     proxy_idx = 0
     last: Exception | None = None

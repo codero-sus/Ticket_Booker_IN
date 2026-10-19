@@ -107,7 +107,19 @@ def doctor_data(config_path: str | None = None) -> dict:
             checks.append({"name": f"journey:{extra}", "ok": True, "hint": ""})
         except Exception as exc:
             check(f"config:{config_path}", False, str(exc)[:200])
-    return {"ok": ok_all, "checks": checks, "version": __version__}
+    try:
+        from ..god.session_vault import vault_status
+        mem_keys = 0
+        _mp = Path("./profiles/selector_memory.json")
+        if _mp.exists():
+            try:
+                mem_keys = len(json.loads(_mp.read_text(encoding="utf-8") or "{}"))
+            except Exception:
+                mem_keys = 0
+        god = {"memory_keys": mem_keys, "vault": vault_status()}
+    except Exception:
+        god = {}
+    return {"ok": ok_all, "checks": checks, "version": __version__, "god": god}
 
 
 def create_app(config_path: str | None = None):
@@ -193,7 +205,7 @@ def create_app(config_path: str | None = None):
         name = str(body.get("name", ""))
         if name not in TOOLS:
             return jsonify({"ok": False, "error": f"unknown tool {name}"}), 400
-        job = _start_job(f"tool:{name}", {"args": body.get("args", {}), "brutality": int(body.get("brutality") or 0),
+        job = _start_job(f"tool:{name}", {"args": body.get("args", {}), "brutality": int(body.get("brutality") or 0), "heads": int(body.get("heads") or 0),
                                           "headless": bool(body.get("headless", False))})
         return jsonify({"ok": True, "job": job})
 
@@ -287,8 +299,12 @@ def _run_job(app, job_id: str, kind: str, payload: dict) -> None:
         cfg = load_config(app.config["TB_CONFIG"])
         brut = payload.get("brutality") or 0
         if brut:
+            from ..god.signals import title_for_level
             cfg.brute.level = int(brut)
-            log.info("GOD dial set to %d/5 for this job", cfg.brute.level)
+            log.info("GOD dial set: %s", title_for_level(cfg.brute.level))
+        heads = payload.get("heads") or 0
+        if heads:
+            cfg.brute.hydra_heads = max(0, min(3, int(heads)))
         headless = payload.get("headless") or None
         if kind in ("login", "search", "book", "tatkal"):
             from ..irctc.booker import IRCTCBooker

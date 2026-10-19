@@ -73,8 +73,11 @@
         <option value="3">3 BRUTE</option>
         <option value="4" selected>4 GOD</option>
         <option value="5">5 ULTIMATE</option>
+        <option value="7">7 OMEGA</option>
+        <option value="9223372036854775807">RADIOACTIVE</option>
       </select>
     </label>
+    <label>hydra heads <input id="heads" type="number" value="0" min="0" max="3" style="width:52px" title="0=auto"></label>
     <div class="row">
       <button class="ghost" data-run="login">Login</button>
       <button class="ghost" data-run="search">Search (dry)</button>
@@ -194,7 +197,7 @@ async function runTool(name, args) {
   try {
     const j = await api('/api/tool', {method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({name, args, headless:headless(), brutality:brut()})});
+      body: JSON.stringify({name, args, headless:headless(), brutality:brut(), heads:parseInt((($('heads')||{}).value)||'0')})});
     if (!j.ok) { log('tool error: ' + (j.error||'unknown')); return; }
     log('tool job ' + j.job.id + ' started (' + name + ')');
     loadJobs();

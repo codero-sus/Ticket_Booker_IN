@@ -22,6 +22,26 @@ from .preprocess import variants
 
 log = logging.getLogger("ticket_booker.captcha.ocr")
 
+def vote_texts(readings: list[tuple[str, float]]) -> tuple[str, float] | None:
+    """RADIOACTIVE ensemble vote across variants/PSMs/rotations.
+
+    Score = best_confidence + 4 per agreeing reading: runaway confidence
+    wins, but close races go to the majority. Returns (text, conf) or None.
+    """
+    if not readings:
+        return None
+    buckets: dict[str, list[float]] = {}
+    for text, conf in readings:
+        key = (text or "").strip()
+        if key:
+            buckets.setdefault(key, []).append(float(conf))
+    if not buckets:
+        return None
+    scored = [(t, max(c) + 4.0 * len(c), max(c)) for t, c in buckets.items()]
+    scored.sort(key=lambda t: t[1], reverse=True)
+    return (scored[0][0], round(scored[0][2], 1))
+
+
 CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 
 
@@ -94,13 +114,27 @@ class OcrSolver(BaseSolver):
         img = load_pil_image(image_bytes)
         best = CaptchaResult(solver=self.name)
 
-        for variant_name, variant_img in variants(img, self.max_variants):
+        readings: list[tuple[str, float]] = []
+
+        def _feed(image, tag: str) -> None:
             for psm in self.psm_modes:
-                text, conf = self._ocr_once(variant_img, psm)
-                log.debug("ocr variant=%s psm=%d -> %r (conf=%.1f)", variant_name, psm, text, conf)
-                plausible = 3 <= len(text) <= 8
-                if text and plausible and conf > best.confidence:
-                    best = CaptchaResult(text=text, confidence=conf, solver=self.name)
+                text, conf = self._ocr_once(image, psm)
+                log.debug("ocr %s psm=%d -> %r (conf=%.1f)", tag, psm, text, conf)
+                if text and 3 <= len(text) <= 8:
+                    readings.append((text, conf))
+
+        for variant_name, variant_img in variants(img, self.max_variants):
+            _feed(variant_img, f"variant={variant_name}")
+        # RADIOACTIVE ensemble: slight rotations catch slanted glyphs
+        try:
+            for angle in (-8, -4, 4, 8):
+                _feed(img.rotate(angle, expand=True), f"rot={angle}")
+        except Exception as exc:
+            log.debug("rotation ensemble skipped: %s", exc)
+
+        voted = vote_texts(readings)
+        if voted is not None:
+            best = CaptchaResult(text=voted[0], confidence=voted[1], solver=self.name)
 
         if self.debug_dir is not None:
             try:
