@@ -28,6 +28,8 @@ config.yml
 # Screenshots / reports / debug artefacts
 screenshots/
 reports/
+journals/
+diagnostics/
 debug/
 *.png
 

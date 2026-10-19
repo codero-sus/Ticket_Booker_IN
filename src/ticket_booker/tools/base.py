@@ -34,6 +34,7 @@ from typing import Any, Callable
 from ..browser import launch_browser
 from ..captcha.manager import AutoCaptcha
 from ..god.diagnostics import save_bundle
+from ..god.journal import Journal
 from ..god.memory import SelectorMemory
 from ..god.pacer import Pacer
 from ..god.signals import (
@@ -126,6 +127,7 @@ class BruteContext:
         self.reports_dir = ensure_dir("./reports")
         self.shots_dir = ensure_dir("./screenshots/tools")
         self.diag_dir = ensure_dir("./diagnostics")
+        self.journal = Journal()
 
         brute = getattr(cfg, "brute", None)
         self.brutality: int = int(getattr(brute, "level", 3) or 3)
@@ -159,9 +161,17 @@ class BruteContext:
                     self.dismiss_popups()
                     if self.brutality >= 5:
                         self.shot("goto")
+                    try:
+                        self.journal.event("goto", url, ok=True)
+                    except Exception:
+                        pass
                     return True
                 except Exception as exc:
                     log.warning("goto %s failed: %s", url, exc)
+                    try:
+                        self.journal.event("goto", url, ok=False, extra=str(exc)[:150])
+                    except Exception:
+                        pass
                     human_delay(1.0, 2.5)
         return False
 
@@ -246,6 +256,10 @@ class BruteContext:
             loc.click(timeout=6000, force=force)
             if what:
                 log.info("🖱️ Clicked '%s'", what)
+            try:
+                self.journal.event("click", what or "?", ok=True)
+            except Exception:
+                pass
             if self.pacer is not None:
                 self.pacer.record(time.time() - _t0)
                 self.pacer.sleep()
@@ -254,6 +268,10 @@ class BruteContext:
             return True
         except Exception as exc:
             log.debug("click '%s' failed: %s", what, exc)
+            try:
+                self.journal.event("click", what or "?", ok=False)
+            except Exception:
+                pass
             return False
 
     # ---------------- BRUTE text-first finders ----------------
@@ -393,7 +411,14 @@ class BruteContext:
             n = len(self.page.locator("body").inner_text(timeout=4000) or "")
         except Exception:
             n = -1
-        return (url, n)
+        pix = ""
+        if self.tier >= 6:
+            try:
+                data = self.page.screenshot(timeout=4000)
+                pix = hashlib.md5(data).hexdigest()[:12] if data else ""
+            except Exception:
+                pix = ""
+        return (url, n, pix)
 
     def _verify_changed(self, before, timeout_s: int = 6) -> bool:
         deadline = time.time() + timeout_s
@@ -519,6 +544,10 @@ class BruteContext:
             time.sleep(0.3)
             loc.press_sequentially(value, delay=random.randint(20, 70), timeout=12000)
             log.info("⌨️ Filled '%s'", label)
+            try:
+                self.journal.event("fill", label, ok=True)
+            except Exception:
+                pass
             if self.pacer is not None:
                 self.pacer.sleep()
             if self.brutality >= 5:
@@ -526,6 +555,10 @@ class BruteContext:
             return True
         except Exception as exc:
             log.debug("fill '%s' failed: %s", label, exc)
+            try:
+                self.journal.event("fill", label, ok=False)
+            except Exception:
+                pass
             return False
 
     def table_texts(self, max_tables: int = 6, max_rows: int = 60) -> list[list[list[str]]]:
@@ -626,6 +659,10 @@ class BruteContext:
             if filled:
                 solved += 1
                 log.info("🔓 Captcha auto-filled (%s).", res.solver)
+                try:
+                    self.journal.event("captcha", res.solver, ok=True)
+                except Exception:
+                    pass
                 human_delay(0.5, 1.2)
             else:
                 log.warning("Captcha found but no input box — stopping.")
@@ -695,7 +732,13 @@ class BruteContext:
                 if attempt > 1:
                     log.info("🔁 %s — brute attempt %d/%d", what, attempt, retries)
                 self._heartbeat()
-                return fn()
+                _t0 = time.time()
+                _out = fn()
+                try:
+                    self.journal.event("brute", what, ok=True, ms=int((time.time() - _t0) * 1000))
+                except Exception:
+                    pass
+                return _out
             except BlockedError:
                 raise
             except Exception as exc:
@@ -713,6 +756,10 @@ class BruteContext:
                 if attempt < retries:
                     time.sleep(escalate_delay(attempt))
         assert last is not None
+        try:
+            self.journal.event("brute", what, ok=False, extra=str(last)[:200])
+        except Exception:
+            pass
         self._save_diagnostics(what, last)
         raise last
 

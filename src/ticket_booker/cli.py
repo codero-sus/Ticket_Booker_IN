@@ -68,6 +68,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--heads", type=int, default=0, help="HYDRA heads 0(auto)-3 (OMEGA+, tools only).")
     _add_common(s)
 
+    s = sub.add_parser("chaos", help="Run offline CHAOS drills (prove GOD survives).")
+    s.add_argument("-v", "--verbose", action="store_true")
+
+    s = sub.add_parser("preflight", help="Pre-flight checks before race day.")
+    s.add_argument("--config", "-c", default="config.json")
+    s.add_argument("-v", "--verbose", action="store_true")
+
     s = sub.add_parser("webui", help="Launch the easy WebUI dashboard (auto-opens in Chrome).")
     s.add_argument("--port", type=int, default=8765, help="Port (default 8765, auto-bumps if busy).")
     s.add_argument("--host", default="127.0.0.1", help="Bind host (default 127.0.0.1).")
@@ -327,6 +334,31 @@ def cmd_tool(args) -> int:
     return 0 if res.ok else 1
 
 
+def cmd_chaos(args) -> int:
+    from .god.chaos import run_drills
+
+    results = run_drills()
+    print('DRILL'.ljust(28) + 'RESULT  DETAIL')
+    ok_all = True
+    for r in results:
+        ok_all &= r.ok
+        mark = 'PASS' if r.ok else 'FAIL'
+        print(r.name.ljust(28) + ' ' + mark.ljust(6) + '  ' + r.detail)
+    print("CHAOS: " + ("GOD SURVIVES" if ok_all else "GOD WOUNDED - see FAIL"))
+    return 0 if ok_all else 1
+
+
+def cmd_preflight(args) -> int:
+    from .god.preflight import preflight
+
+    res = preflight(_load_cfg(args))
+    for c in res.checks:
+        mark = "OK  " if c["ok"] else ("WARN" if c["level"] == "warn" else "FAIL")
+        print('[' + mark + '] ' + c['name'] + ': ' + c['msg'])
+    print("PREFLIGHT: " + ("CLEARED FOR TAKEOFF" if res.ok else "DO NOT FLY - fix FAILs"))
+    return 0 if res.ok else 1
+
+
 def cmd_webui(args) -> int:
     from .webui.launcher import serve
 
@@ -349,5 +381,7 @@ def main(argv=None) -> None:
         "railone": cmd_railone,
         "tool": cmd_tool,
         "webui": cmd_webui,
+        "chaos": cmd_chaos,
+        "preflight": cmd_preflight,
     }[args.command](args)
     sys.exit(code or 0)

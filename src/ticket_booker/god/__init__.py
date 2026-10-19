@@ -15,7 +15,10 @@ Brutality levels (config `brute.level`, CLI `--brutality`, WebUI selector):
 """
 
 from .diagnostics import redact_config, redact_text, save_bundle
+from .chaos import DrillResult, run_drills
 from .engine import god_run
+from .journal import Journal
+from .preflight import PreflightResult, preflight
 from .hydra import heads_for, hydra_race
 from .pacer import Pacer
 from .session_vault import load_vault, save_vault, vault_status
@@ -39,6 +42,11 @@ __all__ = [
     "diagnostics",
     "escalate_delay",
     "god_run",
+    "DrillResult",
+    "run_drills",
+    "Journal",
+    "PreflightResult",
+    "preflight",
     "heads_for",
     "hydra_race",
     "Pacer",

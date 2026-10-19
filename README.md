@@ -122,6 +122,8 @@ ticket-booker tool live --train 12430 [--station CNB] -c config.json
 
 # Easy WebUI (auto-opens in Chrome once ready)
 ticket-booker webui                        # --port 8765 --no-open to skip Chrome
+ticket-booker preflight -c config.json     # find booking-killers BEFORE race day
+ticket-booker chaos                        # offline disaster drills (prove GOD survives)
 ```
 
 ## ⚙️ Configuration (`config.json`)
@@ -285,6 +287,15 @@ God powers:
 - **Verified clicks** — submit clicks confirm the page actually changed, else escalate.
 - **Captcha ensemble voting** — OCR readings across variants/PSMs/rotations vote; majority wins.
 - **Doomsday budget** — `brute.max_tool_minutes` kills runaway runs (0 = immortal).
+- **Flight recorder** - every action journaled to `./journals/*.jsonl` (what/when/outcome).
+- **Perceptual verify (OMEGA+)** - submit clicks compare screenshot hashes, not just
+  URLs/text, to catch visual stalls.
+- **Payment bodyguard** - failure pages abort the wait instantly (no burning the full
+  window); waiting screenshots every 60s.
+- **Pre-flight** (`ticket-booker preflight`) - ARP window, Tatkal timing, pax limits,
+  solvers, binaries: FAIL = do not fly.
+- **CHAOS drills** (`ticket-booker chaos`) - scripted flaky actions, browser death,
+  block walls, session rot, doomsday: GOD SURVIVES.
 
 ## 🛠️ Troubleshooting
 
