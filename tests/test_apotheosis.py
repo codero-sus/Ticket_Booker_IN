@@ -11,9 +11,13 @@ import pytest
 from ticket_booker.god.algebra import (
     DEFAULT_BRUTALITY,
     INT64_MAX,
+    VOID_THRESHOLD,
     BruteAlgebraError,
     evaluate,
+    evaluate_raw,
+    is_void,
     parse_level,
+    parse_level_raw,
     sat_fact,
     sat_mul,
     sat_pow,
@@ -141,9 +145,11 @@ def test_max_title_is_nine_gods_deep():
 def test_report_for_default_warcry():
     r = report(None)
     assert r["expression"] == DEFAULT_BRUTALITY
-    assert r["level"] == INT64_MAX and r["at_max"] is True
-    assert r["tier"] == "RADIOACTIVE"
-    assert r["level_text"] == "9,223,372,036,854,775,807"
+    assert r["level"] > INT64_MAX  # raw dial: four gods deep breaks the ceiling
+    assert r["at_max"] is True
+    assert r["tier"] == "VOID"
+    assert is_void(r["level"])
+    assert r["level_text"] == "∞"  # four-god power tower overflows display
     assert "WITHOUT END" in r["warcry"]
     assert "9x THE ULTIMATE BRUTE GOD" in r["warcry"]
 
@@ -292,7 +298,8 @@ def test_cli_accepts_expressions():
 
     args = build_parser().parse_args(
         ["tool", "live", "--train", "12430", "--brutality", "god of god of god of god"])
-    assert args.brutality == INT64_MAX
+    assert args.brutality > INT64_MAX  # raw dial: four gods deep breaks the ceiling
+    assert is_void(args.brutality)
     assert build_parser().parse_args(["ascend", "god^god"]).expression == "god^god"
     with pytest.raises(SystemExit):
         build_parser().parse_args(["tool", "live", "--brutality", "banana"])
@@ -304,7 +311,7 @@ def test_cli_ascend_command(tmp_path, monkeypatch, capsys):
 
     assert cmd_ascend(Namespace(expression="god of god of god of god")) == 0
     out = capsys.readouterr().out
-    assert "9,223,372,036,854,775,807" in out and "APOTHEOSIS" in out
+    assert "∞" in out and "APOTHEOSIS" in out and "VOID" in out
     assert cmd_ascend(Namespace(expression="banana")) == 2
 
 
@@ -341,7 +348,8 @@ def test_webui_parses_expression_and_rejects_garbage(tmp_path, monkeypatch):
     ok = client.post("/api/run", json={"kind": "login",
                                        "brutality": "god of god of god of god"})
     assert ok.status_code == 200 and done.wait(2)
-    assert seen["brutality"] == INT64_MAX
+    assert seen["brutality"] > INT64_MAX  # raw dial enters the VOID
+    assert is_void(seen["brutality"])
 
 
 def test_preflight_warbell_check():

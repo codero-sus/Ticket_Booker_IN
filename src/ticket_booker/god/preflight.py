@@ -28,6 +28,8 @@ def _c(name: str, ok: bool, msg: str, level: str = "fail") -> dict:
 
 def preflight(cfg, today=None) -> PreflightResult:
     from ..timing import format_duration, now_ist, parse_journey_date, tatkal_open_datetime
+    from .algebra import is_void
+    from .signals import title_for_level
 
     checks: list[dict] = []
     j = cfg.journey
@@ -91,6 +93,18 @@ def preflight(cfg, today=None) -> PreflightResult:
             checks.append(_c("arm.warbell", True, f"armed for {h:02d}:{m:02d}:{s:02d}"))
         except Exception as exc:
             checks.append(_c("arm.warbell", False, f"bad arm_at: {exc}"))
+    _brute = getattr(cfg, "brute", None)
+    _lvl = _brute.level if _brute is not None else 4
+    if is_void(_lvl):
+        checks.append(
+            _c(
+                "brute.void",
+                True,
+                f"{title_for_level(cfg.brute.level)} — VOID MODE: no doomsday, "
+                "no pacer, immortal retries, omni-captcha. NO MERCY.",
+                level="ok",
+            )
+        )
     try:
         from camoufox.pkgman import installed_verstr
 

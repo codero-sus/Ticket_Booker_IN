@@ -16,10 +16,13 @@ from __future__ import annotations
 from .algebra import (
     DEFAULT_BRUTALITY,
     INT64_MAX,
+    VOID_THRESHOLD,
     BruteAlgebraError,
     evaluate,
+    evaluate_raw,
     format_level,
 )
+from .infinite import void_title
 from .signals import tier_of, title_for_level
 
 CORE = "THE ULTIMATE BRUTE GOD"
@@ -27,8 +30,9 @@ MAX_GOD_DEPTH = 8  # 8 x " OF THE " + the core = nine gods deep
 
 
 def _clamp(level) -> int:
+    # NO upper cap: void levels (> INT64_MAX) must survive clamping.
     try:
-        return max(1, min(INT64_MAX, int(level)))
+        return max(1, int(level))
     except (TypeError, ValueError):
         return 4
 
@@ -38,7 +42,9 @@ def god_depth(level) -> int:
     level = _clamp(level)
     if level < 10:
         return 0
-    digits = len(str(level))
+    if level >= 10 ** 10:  # 11+ digits -> depth already capped at MAX_GOD_DEPTH
+        return MAX_GOD_DEPTH
+    digits = len(str(level))  # safe: level < 10^10
     return min(MAX_GOD_DEPTH, max(0, digits - 2))
 
 
@@ -52,6 +58,8 @@ def apotheosis_title(level) -> str:
     if level <= 9:
         return title_for_level(level)
     stack = " OF ".join([CORE] * repeat_count(level))
+    if level >= VOID_THRESHOLD:
+        return f"{stack} — {void_title(level)}"
     if level >= INT64_MAX:
         return f"{stack} — RADIOACTIVE LVL 9223372036854775807"
     return f"{stack} — RADIOACTIVE LVL {format_level(level)}"
@@ -66,6 +74,7 @@ def tier_name(level) -> str:
         5: "ULTIMATE GOD",
         6: "OMEGA",
         7: "RADIOACTIVE",
+        8: "VOID",
     }[tier_of(level)]
 
 
@@ -78,9 +87,13 @@ def warcry(level) -> str:
 
 
 def level_from(expr=None) -> tuple[int, str]:
-    """Resolve an expression to (level, expression_used). Defaults to the warcry."""
+    """Resolve an expression to (level, expression_used). Defaults to the warcry.
+
+    Uses the UNBOUNDED dial so ``ascend void`` shows the VOID, not a clamped
+    INT64_MAX.
+    """
     text = str(expr or "").strip() or DEFAULT_BRUTALITY
-    return evaluate(text), text
+    return evaluate_raw(text), text
 
 
 def report(expr=None) -> dict:

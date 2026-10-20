@@ -182,9 +182,9 @@ def create_app(config_path: str | None = None):
         raw = body.get("brutality") or 0
         if not raw:
             return 0
-        from ..god.algebra import parse_level
+        from ..god.algebra import parse_level_raw
 
-        return parse_level(raw)
+        return parse_level_raw(raw)
 
     def _start_job(kind: str, payload: dict) -> dict:
         job_id = f"job-{next(JOB_COUNTER)}"
