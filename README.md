@@ -23,6 +23,8 @@ login (auto captcha) → search → Tatkal countdown race → passengers → UPI
      directly when `GEMINI_API_KEY` is set. Both vote for consensus.
   4. **Paid fallback** — 2Captcha / AntiCaptcha image-to-text API.
   5. **Manual assist** — last resort: solve once in the open browser, bot continues.
+- **AUTOPILOT** — `ticket-booker auto` books with no prompts at all and can show
+  the run in a **small LIVE popup window** (live frames + step log).
 - **Tatkal race mode** — NTP clock sync, precise 10:00 (AC) / 11:00 (Non-AC) countdown,
   availability refresh loop, instant Book-Now.
 - **Safe payments** — bot never touches card/netbanking/OTP secrets. UPI tab + UPI ID
@@ -253,6 +255,8 @@ src/ticket_booker/
     preprocess.py        IRCTC-tuned image cleaning (OpenCV/PIL)
     recaptcha_solver.py  audio transcription pipeline (used by the bridge)
     service_solver.py    2Captcha / AntiCaptcha fallback
+  monitor.py             in-memory live step log + JPEG frames for the popup
+  demo.py                scripted run that fills the popup (never books)
   irctc/
     constants.py         ALL selectors + label maps (edit here when IRCTC changes)
     login.py             login + captcha retry loop
@@ -260,11 +264,13 @@ src/ticket_booker/
     passengers.py        passenger form fast-fill
     payment.py           UPI assist + PNR capture (human approves payment)
     booker.py            end-to-end orchestration
+    autopilot.py         hands-free run: auto login/search/pay + retries
   tools/                 BRUTE scrapers (text-first + auto-captcha + reports)
     base.py              BruteContext: find/click/fill by text, retry, captcha-anywhere
     pnr.py / availability.py / schedule.py / fare.py / live_status.py
   webui/
-    server.py            Flask API + jobs + SSE logs
+    server.py            Flask API + jobs + SSE logs + /monitor routes
+    monitor.html         the small LIVE popup page (frames + step log)
     dashboard.html       single-file offline-safe dashboard
     launcher.py          serve + wait-ready + auto-open Chrome
   railone/               RailOne adapter (IRCTC fallback + roadmap)
@@ -439,6 +445,85 @@ ticket-booker solve-captcha captcha.png     # prints {text, confidence, solver}
 When a low-confidence OCR reading comes back (< 60), Nano gets one repair pass
 before the booking flow retries — that is the difference between a wasted
 Tatkal attempt and a login.
+
+## 🤖 AUTOPILOT — books with zero input, and shows you everything
+
+One command, no prompts, no clicking:
+
+```bash
+ticket-booker auto            # auto login -> auto search -> auto everything
+ticket-booker auto --popup    # + the small LIVE window
+```
+
+What happens, in order, with nobody touching the keyboard:
+
+1. **Auto login** — opens IRCTC, fills credentials from config, solves the
+   captcha (Buster bridge, Gemini Nano repair or OCR), signs in.
+2. **Auto search** — station/date/class from config, train list loaded.
+3. **Auto select** — picks the train and class; Tatkal runs wait for the
+   10:00 / 11:00 window and race automatically.
+4. **Auto fill** — passengers, preferences, continue to review.
+5. **Auto captcha** — review-page captcha solved if IRCTC asks again.
+6. **Auto pay** — UPI tab, UPI ID pre-filled, **Pay** clicked.
+7. **Auto watch** — polls for the PNR, retries the whole cycle if a stage
+   fails (session death, sold out, browser crash).
+
+### The small popup window
+
+The run should be *visible*, not a black box:
+
+```bash
+ticket-booker auto --small-window      # the booking browser itself, 480x860
+ticket-booker auto --popup             # + a floating LIVE monitor
+ticket-booker auto --popup --monitor-size 430x680
+```
+
+and in the WebUI, the **🤖 AUTOPILOT + LIVE** button (plus **▶ demo popup**
+to preview it with a scripted run).
+
+`/monitor` is a small dark window that shows:
+
+- **the live page, as a picture** — JPEG frames pushed from the booking thread
+  every `pilot.snapshot_seconds` (default 3s). No second browser, no screen
+  capture, no window focus games.
+- **the step log** — `login → search → select → passengers → payment → booked`,
+  timestamped, with the elapsed clock and a pulsing live dot.
+- **the verdict** — the PNR in green, or the failure reason in red.
+
+Frames are captured by the thread that owns the Playwright page (the sync API
+is not thread-safe) and only the resulting bytes are shared, so the popup can
+never destabilise a booking.
+
+```json
+"pilot": {
+  "enabled": true, "max_cycles": 4, "retry_delay_seconds": 8.0,
+  "snapshot_seconds": 3.0, "force_auto_captcha": true,
+  "auto_payment": true, "auto_submit": true, "monitor_size": "430x680"
+},
+"browser": { "small_window": false, "window_width": 480, "window_height": 860 }
+```
+
+**Hands-free is enforced, not hoped for.** The autopilot rewrites a blocking
+config at start-up: `captcha.mode: manual` becomes `auto`,
+`captcha.on_failure: manual` becomes `error`, and `payment.method: manual`
+becomes `upi`. There is no `input()` anywhere in the booking path.
+
+### Two hard limits, on purpose
+
+- **The bank is still yours.** The bot drives IRCTC up to and including
+  submitting the payment, but it never types a PIN, net-banking password or
+  OTP. IRCTC's UPI collect request is approved in *your* bank app. Set
+  `payment.auto_submit: false` to stop even before that click.
+- **It will not double-book.** Once the Pay button has been clicked, the
+  retry loop stops dead even if no PNR appears — a payment in flight might
+  still succeed, and re-running could buy two tickets. You get a loud message
+  telling you to check booking history instead.
+
+Offline preview of exactly what the popup looks like:
+
+```bash
+ticket-booker webui          # then click "▶ demo popup"
+```
 
 ## 🎯 Buster bridge — click the icon, then PLAY
 

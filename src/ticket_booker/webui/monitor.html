@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ticket Booker — LIVE</title>
+<style>
+  :root { --bg:#0c1018; --card:#151b28; --line:#243049; --txt:#e8edf7;
+          --dim:#8b9ab5; --acc:#ffb020; --ok:#37d67a; --bad:#ff5a5a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  header { display:flex; align-items:center; gap:8px; padding:8px 10px;
+           background:var(--card); border-bottom:1px solid var(--line);
+           position:sticky; top:0; z-index:5; }
+  #dot { width:9px; height:9px; border-radius:50%; background:var(--dim); flex:0 0 auto; }
+  #dot.live { background:var(--ok); box-shadow:0 0 0 0 rgba(55,214,122,.7);
+              animation:pulse 1.6s infinite; }
+  #dot.done { background:var(--ok); }
+  #dot.bad { background:var(--bad); }
+  @keyframes pulse { 70% { box-shadow:0 0 0 8px rgba(55,214,122,0); }
+                     100% { box-shadow:0 0 0 0 rgba(55,214,122,0); } }
+  #step { font-weight:700; letter-spacing:.02em; text-transform:uppercase; }
+  #elapsed { margin-left:auto; color:var(--dim); font-size:11px; }
+  #screen { width:100%; display:block; background:#000; min-height:180px;
+            max-height:52vh; object-fit:contain; border-bottom:1px solid var(--line); }
+  #placeholder { padding:26px 14px; text-align:center; color:var(--dim); }
+  #pnr { display:none; padding:8px 10px; background:#12351f; color:#b9ffd0;
+         border-bottom:1px solid #1e5b34; font-weight:700; letter-spacing:.04em; }
+  #log { padding:6px 8px 20px; }
+  .ev { display:flex; gap:7px; padding:2px 0; border-bottom:1px solid rgba(36,48,73,.45); }
+  .ev .t { color:#5d6d8b; flex:0 0 52px; }
+  .ev .s { color:var(--acc); flex:0 0 auto; min-width:64px; font-weight:700; }
+  .ev .d { color:var(--dim); word-break:break-word; }
+  .ev.warn .s { color:#ffc861; } .ev.error .s { color:var(--bad); }
+  .ev.ok .s { color:var(--ok); }
+  .empty { color:var(--dim); padding:10px 2px; }
+  footer { position:fixed; bottom:0; left:0; right:0; padding:5px 10px;
+           background:var(--card); border-top:1px solid var(--line);
+           color:var(--dim); font-size:11px; display:flex; gap:10px; }
+  footer b { color:var(--txt); font-weight:600; }
+</style>
+</head>
+<body>
+<header>
+  <span id="dot"></span>
+  <span id="step">idle</span>
+  <span id="elapsed"></span>
+</header>
+<div id="pnr"></div>
+<img id="screen" alt="live browser" style="display:none">
+<div id="placeholder">Waiting for a run…<br><span style="font-size:11px">
+start it from the dashboard (⚡ AUTOPILOT) or <code>ticket-booker auto</code></span></div>
+<div id="log"><div class="empty">no events yet</div></div>
+<footer><span>frame <b id="fseq">0</b></span><span>events <b id="ecount">0</b></span>
+        <span id="task"></span></footer>
+
+<script>
+const $ = id => document.getElementById(id);
+let lastSeq = -1, lastFrameAt = 0;
+
+function setDot(cls) { $('dot').className = cls; }
+
+function render(d) {
+  const running = d.running;
+  if (d.ok === true && !running) setDot('done');
+  else if (d.ok === false && !running) setDot('bad');
+  else if (running) setDot('live');
+  else setDot('');
+
+  $('step').textContent = d.step || (running ? 'running' : 'idle');
+  $('task').textContent = d.task ? ('task: ' + d.task) : '';
+  $('elapsed').textContent = d.started_at
+      ? (running ? '▶ ' : '■ ') + d.elapsed.toFixed(0) + 's' : '';
+
+  const pnr = $('pnr');
+  if (d.pnr) { pnr.style.display = 'block'; pnr.textContent = '🎫 BOOKED — PNR ' + d.pnr; }
+  else if (d.message && d.ok === false && !running) {
+    pnr.style.display = 'block';
+    pnr.style.background = '#3a1414'; pnr.style.color = '#ffc9c9';
+    pnr.style.borderBottomColor = '#63201f'; pnr.textContent = '✖ ' + d.message;
+  } else { pnr.style.display = 'none'; }
+
+  // event log (newest last, like a terminal)
+  const log = $('log');
+  if (!d.events.length) { log.innerHTML = '<div class="empty">no events yet</div>'; }
+  else {
+    log.innerHTML = d.events.map(e =>
+      `<div class="ev ${e.level}"><span class="t">${e.at}</span>` +
+      `<span class="s">${escapeHtml(e.step)}</span>` +
+      `<span class="d">${escapeHtml(e.detail)}</span></div>`).join('');
+  }
+  $('ecount').textContent = d.events.length;
+  $('fseq').textContent = d.frame_seq;
+
+  // live frame
+  if (d.frame_seq && d.frame_seq !== lastSeq) {
+    lastSeq = d.frame_seq;
+    lastFrameAt = Date.now();
+    const img = $('screen');
+    img.style.display = 'block';
+    $('placeholder').style.display = 'none';
+    img.src = '/api/monitor/frame.jpg?seq=' + d.frame_seq + '&t=' + Date.now();
+  }
+  if (!d.frame_seq) {
+    $('screen').style.display = 'none';
+    $('placeholder').style.display = 'block';
+  }
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function tick() {
+  try {
+    const r = await fetch('/api/monitor/state', {cache:'no-store'});
+    render(await r.json());
+  } catch (e) {
+    $('step').textContent = 'offline';
+    setDot('bad');
+  }
+}
+
+tick();
+setInterval(tick, 900);
+$('screen').onerror = () => { $('screen').style.display = 'none';
+                              $('placeholder').style.display = 'block'; };
+</script>
+</body>
+</html>

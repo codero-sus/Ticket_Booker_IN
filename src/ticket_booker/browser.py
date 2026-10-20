@@ -84,6 +84,41 @@ def build_launch_options(cfg: BrowserCfg, headless: bool | None = None) -> dict[
     return options
 
 
+def apply_small_window(page, cfg: BrowserCfg) -> bool:
+    """Make the browser a small, watchable popup when `small_window` is on.
+
+    Best-effort and never fatal: viewport resize first (works headless),
+    then a JS window.resizeTo/moveTo for real headed windows.
+    """
+    if not getattr(cfg, "small_window", False) or page is None:
+        return False
+    width = int(getattr(cfg, "window_width", 480) or 480)
+    height = int(getattr(cfg, "window_height", 860) or 860)
+    x = int(getattr(cfg, "window_x", 40) or 0)
+    y = int(getattr(cfg, "window_y", 40) or 0)
+    applied = False
+    try:
+        page.set_viewport_size({"width": width, "height": height})
+        applied = True
+    except Exception as exc:
+        log.debug("viewport resize failed: %s", exc)
+    try:
+        page.evaluate(
+            """([w, h, x, y]) => {
+                try { window.resizeTo(w, h); } catch (e) {}
+                try { window.moveTo(x, y); } catch (e) {}
+                return [window.outerWidth, window.outerHeight];
+            }""",
+            [width, height, x, y],
+        )
+        applied = True
+    except Exception as exc:
+        log.debug("window resize failed: %s", exc)
+    if applied:
+        log.info("Small popup window: %dx%d at (%d,%d)", width, height, x, y)
+    return applied
+
+
 @contextmanager
 def launch_browser(
     cfg: BrowserCfg, headless: bool | None = None
@@ -114,6 +149,8 @@ def launch_browser(
                 page.set_default_navigation_timeout(45000)
             except Exception:
                 pass
+            if getattr(cfg, "small_window", False):
+                apply_small_window(page, cfg)
             yield BrowserSession(context=context, page=page, profile_dir=profile_dir)
     except Exception as exc:
         msg = str(exc)
