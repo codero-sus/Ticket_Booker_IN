@@ -41,10 +41,13 @@ def find_chrome() -> str | None:
     return None
 
 
-def open_in_chrome(url: str) -> bool:
+def open_in_chrome(url: str, size: tuple[int, int] | None = None,
+                   app_mode: bool = False) -> bool:
     """Open URL in Chrome (detached). Falls back to default browser.
 
-    Returns True if Chrome itself was used."""
+    `size` opens a small popup window; `app_mode` drops the tab strip and
+    address bar so it reads as a floating monitor. Returns True if Chrome
+    itself was used."""
     chrome = find_chrome()
     if chrome:
         try:
@@ -53,9 +56,22 @@ def open_in_chrome(url: str) -> bool:
                 kwargs["start_new_session"] = True
             else:  # Windows: fully detached
                 kwargs["creationflags"] = getattr(subprocess, "DETACHED_PROCESS", 0)
-            subprocess.Popen([chrome, url], stdout=subprocess.DEVNULL,
+            args = [chrome]
+            if app_mode:
+                args.append(f"--app={url}")
+            else:
+                args.append(url)
+            if size:
+                args.append(f"--window-size={int(size[0])},{int(size[1])}")
+                args.append(f"--window-position={int(size[2]) if len(size) > 2 else 40},"
+                            f"{int(size[3]) if len(size) > 3 else 40}")
+            profile_dir = Path(os.environ.get("TEMP", "/tmp")) / "tb-monitor-profile"
+            if app_mode:
+                args.append(f"--user-data-dir={profile_dir}")
+            subprocess.Popen(args, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, **kwargs)
-            log.info("🌐 Opened in Chrome: %s", url)
+            log.info("🌐 Opened in Chrome: %s%s", url,
+                     f" ({size[0]}x{size[1]})" if size else "")
             return True
         except Exception as exc:
             log.warning("Chrome launch failed (%s); using default browser.", exc)
@@ -92,6 +108,38 @@ def wait_ready(url: str, timeout: int = 30) -> bool:
             pass
         time.sleep(0.4)
     return False
+
+
+def parse_size(raw: str, default: tuple[int, int] = (430, 680)) -> tuple[int, int]:
+    """Parse "430x680" into (430, 680)."""
+    try:
+        w, h = str(raw or "").lower().replace(" ", "").split("x")
+        return max(240, int(w)), max(240, int(h))
+    except Exception:
+        return default
+
+
+def start_background(port: int = 8765, host: str = "127.0.0.1",
+                     config_path: str | None = None):
+    """Start the WebUI on a daemon thread. Returns (server, base_url)."""
+    from werkzeug.serving import make_server
+
+    from .server import create_app
+
+    port = free_port(port, host)
+    app = create_app(config_path)
+    server = make_server(host, port, app, threaded=True)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://{host}:{port}"
+    wait_ready(url + "/api/health", timeout=10)
+    return server, url
+
+
+def open_monitor(base_url: str, size: str = "430x680") -> bool:
+    """Open the small LIVE popup window pointed at /monitor."""
+    w, h = parse_size(size)
+    url = base_url.rstrip("/") + "/monitor"
+    return open_in_chrome(url, size=(w, h, 40, 40), app_mode=True)
 
 
 def serve(port: int = 8765, host: str = "127.0.0.1", open_browser: bool = True,

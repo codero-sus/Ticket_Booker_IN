@@ -130,6 +130,23 @@ class Payment(BaseModel):
     method: Literal["manual", "upi"] = "manual"
     upi_id: str = ""
     wait_minutes: int = Field(10, ge=1, le=30)
+    #: Click Pay/Proceed after choosing UPI. Never types a PIN, password or
+    #: OTP - the bank approval still happens in the user's bank app.
+    auto_submit: bool = False
+
+
+class PilotCfg(BaseModel):
+    """Hands-free autopilot: auto login, auto search, auto everything."""
+
+    enabled: bool = True
+    max_cycles: int = Field(4, ge=1, le=20)
+    retry_delay_seconds: float = Field(8.0, ge=0.0, le=120.0)
+    snapshot_seconds: float = Field(3.0, ge=0.5, le=30.0)
+    force_auto_captcha: bool = True
+    auto_payment: bool = True
+    auto_submit: bool = True
+    open_monitor: bool = True
+    monitor_size: str = "430x680"
 
 
 class Tatkal(BaseModel):
@@ -153,6 +170,12 @@ class BrowserCfg(BaseModel):
     proxy: dict[str, str] | None = None  # {"server": "...", "username": "..", "password": ".."}
     block_images: bool = False
     addons: list[str] = []  # optional .xpi paths (e.g. Buster) loaded into Camoufox
+    # Small, watchable window: the "popup browser" you can see working.
+    small_window: bool = False
+    window_width: int = Field(480, ge=320, le=1920)
+    window_height: int = Field(860, ge=320, le=2000)
+    window_x: int = 40
+    window_y: int = 40
 
 
 # ---------------- captcha ----------------
@@ -240,6 +263,7 @@ class AppConfig(BaseModel):
     browser: BrowserCfg = BrowserCfg()
     captcha: CaptchaCfg = CaptchaCfg()
     brute: BruteCfg = BruteCfg()
+    pilot: PilotCfg = PilotCfg()
 
     @field_validator("passengers")
     @classmethod

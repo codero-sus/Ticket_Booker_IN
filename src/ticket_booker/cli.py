@@ -66,6 +66,25 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("tatkal", help="book with Tatkal mode forced on.")
     _add_common(s)
 
+    s = sub.add_parser(
+        "auto",
+        help="AUTOPILOT: hands-free booking - auto login, auto search, auto pay.",
+    )
+    s.add_argument("--cycles", type=int, default=0,
+                   help="Full booking cycles before giving up (0 = use config).")
+    s.add_argument("--small-window", dest="small_window", action="store_true",
+                   default=None, help="Show the browser in a small watchable window.")
+    s.add_argument("--no-small-window", dest="small_window", action="store_false",
+                   help="Use the normal (large) browser window.")
+    s.add_argument("--popup", action="store_true",
+                   help="Also open the LIVE monitor as a small popup window.")
+    s.add_argument("--monitor-size", default="",
+                   help="Popup size, e.g. 430x680.")
+    s.add_argument("--headless", action="store_true", help="Run without showing the browser.")
+    s.add_argument("--brutality", "-b", default="", help="BRUTE ALGEBRA dial, e.g. \"void\".")
+    s.add_argument("--config", "-c", default="config.json")
+    s.add_argument("-v", "--verbose", action="store_true")
+
     s = sub.add_parser("railone", help="Show the RailOne roadmap / run via IRCTC fallback.")
     s.add_argument("--roadmap", action="store_true", help="Print roadmap and exit.")
     _add_common(s, config_required=False)
@@ -518,6 +537,51 @@ def cmd_ascend(args) -> int:
     return 0
 
 
+def cmd_auto(args) -> int:
+    """Hands-free booking: auto login, auto search, auto pay, live popup."""
+    from .config import load_config
+    from .irctc.autopilot import Autopilot
+
+    cfg = load_config(args.config)
+
+    raw = getattr(args, "brutality", "") or ""
+    if raw:
+        from .god.algebra import parse_level_raw
+
+        cfg.brute.level = parse_level_raw(raw)
+    if getattr(args, "cycles", 0):
+        cfg.pilot.max_cycles = max(1, int(args.cycles))
+
+    # Watchable by default: that is the point of AUTOPILOT.
+    small = getattr(args, "small_window", None)
+    cfg.browser.small_window = True if small is None else bool(small)
+
+    print("=" * 64)
+    print("  🤖 AUTOPILOT - hands-free booking")
+    print(f"  {cfg.journey.from_station} -> {cfg.journey.to_station} on "
+          f"{cfg.journey.date} | {cfg.journey.class_code}/{cfg.journey.quota} | "
+          f"{len(cfg.passengers)} pax")
+    print(f"  cycles={cfg.pilot.max_cycles}  small_window={cfg.browser.small_window} "
+          f"  auto_submit={cfg.payment.auto_submit or cfg.pilot.auto_submit}")
+    print("  No prompts. No clicking. Watch it in the monitor window.")
+    print("=" * 64)
+
+    if getattr(args, "popup", False):
+        try:
+            from .webui import launcher
+
+            _server, url = launcher.start_background(config_path=args.config)
+            size = getattr(args, "monitor_size", "") or cfg.pilot.monitor_size
+            launcher.open_monitor(url, size)
+            print(f"  🪟 LIVE monitor: {url}/monitor ({size})")
+        except Exception as exc:
+            print(f"  (monitor popup unavailable: {exc})")
+
+    report = Autopilot(cfg, headless=bool(getattr(args, "headless", False))).run()
+    print(json.dumps(report.as_dict(), indent=2))
+    return 0 if report.ok else 1
+
+
 def cmd_webui(args) -> int:
     from .webui.launcher import serve
 
@@ -544,5 +608,6 @@ def main(argv=None) -> None:
         "preflight": cmd_preflight,
         "ascend": cmd_ascend,
         "buster": cmd_buster,
+        "auto": cmd_auto,
     }[args.command](args)
     sys.exit(code or 0)

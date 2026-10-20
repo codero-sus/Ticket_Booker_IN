@@ -129,11 +129,56 @@ def create_app(config_path: str | None = None):
     app = Flask(__name__)
     app.config["TB_CONFIG"] = config_path or "config.json"
     dashboard = (Path(__file__).with_name("dashboard.html")).read_text(encoding="utf-8")
+    monitor_page = (Path(__file__).with_name("monitor.html")).read_text(encoding="utf-8")
 
     # ---------------- pages ----------------
     @app.get("/")
     def index():
         return Response(dashboard, mimetype="text/html")
+
+    @app.get("/monitor")
+    def monitor_view():
+        """The small popup window that shows what the browser is doing."""
+        return Response(monitor_page, mimetype="text/html")
+
+    @app.get("/api/monitor/state")
+    def monitor_state():
+        from ..monitor import get_monitor
+
+        return jsonify(get_monitor().state())
+
+    @app.get("/api/monitor/frame.jpg")
+    def monitor_frame():
+        from ..monitor import get_monitor
+
+        data, seq = get_monitor().frame()
+        if not data:
+            return Response(status=204)
+        resp = Response(data, mimetype="image/jpeg")
+        resp.headers["Cache-Control"] = "no-store, max-age=0"
+        resp.headers["X-Frame-Seq"] = str(seq)
+        return resp
+
+    @app.post("/api/monitor/demo")
+    def monitor_demo():
+        """Play a scripted run into the popup - no browser, no booking."""
+        from ..demo import start_demo
+
+        started = start_demo()
+        return jsonify({"ok": started,
+                        "message": "demo playing" if started else "demo already running"})
+
+    @app.post("/api/autopilot")
+    def autopilot_start():
+        """Start a hands-free run; the popup polls /api/monitor/*."""
+        body = request.get_json(force=True, silent=True) or {}
+        payload = {
+            "brutality": body.get("brutality") or "",
+            "heads": body.get("heads") or 0,
+            "headless": body.get("headless"),
+            "small_window": body.get("small_window"),
+        }
+        return jsonify({"ok": True, "job": _start_job("auto", payload)})
 
     @app.get("/api/health")
     def health():
@@ -326,7 +371,19 @@ def _run_job(app, job_id: str, kind: str, payload: dict) -> None:
         if heads:
             cfg.brute.hydra_heads = max(0, min(3, int(heads)))
         headless = payload.get("headless") or None
-        if kind in ("login", "search", "book", "tatkal"):
+        if kind == "auto":
+            from ..irctc.autopilot import run_autopilot
+
+            small = payload.get("small_window")
+            if small is not None:
+                cfg.browser.small_window = bool(small)
+            report = run_autopilot(cfg, headless=headless)
+            update(status="done" if report.ok else "failed",
+                   message=report.message,
+                   data={"pnr": report.pnr or "",
+                         "cycles": report.cycles,
+                         "seconds": round(report.seconds, 1)})
+        elif kind in ("login", "search", "book", "tatkal"):
             from ..irctc.booker import IRCTCBooker
 
             if kind == "tatkal":

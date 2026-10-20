@@ -41,7 +41,8 @@
   "payment": {
     "method": "manual",
     "upi_id": "",
-    "wait_minutes": 10
+    "wait_minutes": 10,
+    "auto_submit": false
   },
   "tatkal": {
     "enabled": true,
@@ -60,7 +61,12 @@
     },
     "proxy": null,
     "block_images": false,
-    "addons": []
+    "addons": [],
+    "small_window": false,
+    "window_width": 480,
+    "window_height": 860,
+    "window_x": 40,
+    "window_y": 40
   },
   "captcha": {
     "_comment": "Zero-touch chain: Buster bridge (icon -> PLAY) for reCAPTCHA, Gemini (Nano on-device + cloud vision) and local OCR for text captchas, then the paid service. Run `ticket-booker buster --install` to fetch the extension.",
@@ -122,5 +128,16 @@
     "arm_at": "",
     "arm_lead_seconds": 5,
     "proxy_list": []
+  },
+  "pilot": {
+    "enabled": true,
+    "max_cycles": 4,
+    "retry_delay_seconds": 8.0,
+    "snapshot_seconds": 3.0,
+    "force_auto_captcha": true,
+    "auto_payment": true,
+    "auto_submit": true,
+    "open_monitor": true,
+    "monitor_size": "430x680"
   }
 }

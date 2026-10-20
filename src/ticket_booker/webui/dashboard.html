@@ -86,9 +86,15 @@
       <button class="ghost" data-run="search">Search (dry)</button>
       <button data-run="book">Book Now</button>
       <button data-run="tatkal">⚡ Tatkal Race</button>
+      <button id="autopilot" title="No prompts: auto login, auto search, auto pay">
+        🤖 AUTOPILOT + LIVE</button>
+      <label class="hint" style="margin-left:6px"><input id="pilot-small" type="checkbox" checked> small window</label>
+      <button class="ghost" id="demo-pop" title="Preview the popup with a scripted run">▶ demo popup</button>
     </div>
     <p class="hint">Uses the config below. Tatkal waits for the 10/11 AM window automatically.
-    Payment is always completed by you in the browser.</p>
+    AUTOPILOT runs the whole chain with no prompts and opens a small LIVE popup
+    that mirrors the browser. A UPI payment still needs your approval in your
+    bank app — the bot never types a PIN or OTP.</p>
   </section>
 
   <section class="card">
@@ -195,6 +201,36 @@ document.querySelectorAll('[data-run]').forEach(b => b.onclick = async () => {
   } catch(e) { log('run failed: ' + e); }
   b.disabled = false;
 });
+
+// ---- demo: see the popup working without booking anything ----
+$('demo-pop').onclick = async () => {
+  try {
+    window.open('/monitor', 'tb-monitor',
+      'width=430,height=680,left=40,top=40,menubar=no,toolbar=no,location=no,status=no');
+    const r = await api('/api/monitor/demo', {method:'POST'});
+    log(r.ok ? '▶ demo running in the popup' : ('demo: ' + r.message));
+  } catch(e) { log('demo failed: ' + e); }
+};
+
+// ---- AUTOPILOT: small LIVE popup + hands-free run ----
+$('autopilot').onclick = async () => {
+  const btn = $('autopilot');
+  btn.disabled = true;
+  try {
+    // small popup window (degrades to a normal tab if popups are blocked)
+    const pop = window.open('/monitor', 'tb-monitor',
+      'width=430,height=680,left=40,top=40,menubar=no,toolbar=no,location=no,status=no');
+    if (pop) { try { pop.focus(); } catch (e) {} }
+    const j = await api('/api/autopilot', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({brutality:brut(), heads:parseInt((($('heads')||{}).value)||'0'),
+                            headless:headless(),
+                            small_window: ($('pilot-small')||{}).checked})});
+    log('🤖 AUTOPILOT started: ' + (j.job ? j.job.id : JSON.stringify(j)));
+    loadJobs();
+  } catch(e) { log('autopilot failed: ' + e); }
+  btn.disabled = false;
+};
 
 async function runTool(name, args) {
   try {
