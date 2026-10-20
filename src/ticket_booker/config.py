@@ -195,6 +195,8 @@ class BruteCfg(BaseModel):
     memory_file: str = "./profiles/selector_memory.json"
     diagnostics: bool = True
     keepalive_checks: bool = True
+    arm_at: str = ""  # CHRONOS warbell: "09:59:55" or "" (off)
+    arm_lead_seconds: int = Field(5, ge=0, le=600)
     proxy_list: list[dict[str, str]] = []
 
 

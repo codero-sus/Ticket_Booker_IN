@@ -177,6 +177,15 @@ def create_app(config_path: str | None = None):
         return jsonify({"ok": True, "path": str(p)})
 
     # ---------------- jobs ----------------
+    def _dial(body: dict) -> int:
+        """Parse a numeric or BRUTE ALGEBRA GOD dial (0 = no override)."""
+        raw = body.get("brutality") or 0
+        if not raw:
+            return 0
+        from ..god.algebra import parse_level
+
+        return parse_level(raw)
+
     def _start_job(kind: str, payload: dict) -> dict:
         job_id = f"job-{next(JOB_COUNTER)}"
         job = {"id": job_id, "kind": kind, "status": "queued",
@@ -194,7 +203,11 @@ def create_app(config_path: str | None = None):
         kind = str(body.get("kind", "book"))
         if kind not in ("login", "search", "book", "tatkal"):
             return jsonify({"ok": False, "error": f"unknown kind {kind}"}), 400
-        job = _start_job(kind, {"headless": bool(body.get("headless", False)), "brutality": int(body.get("brutality") or 0)})
+        try:
+            dial = _dial(body)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": f"bad GOD dial: {exc}"}), 400
+        job = _start_job(kind, {"headless": bool(body.get("headless", False)), "brutality": dial})
         return jsonify({"ok": True, "job": job})
 
     @app.post("/api/tool")
@@ -205,7 +218,12 @@ def create_app(config_path: str | None = None):
         name = str(body.get("name", ""))
         if name not in TOOLS:
             return jsonify({"ok": False, "error": f"unknown tool {name}"}), 400
-        job = _start_job(f"tool:{name}", {"args": body.get("args", {}), "brutality": int(body.get("brutality") or 0), "heads": int(body.get("heads") or 0),
+        try:
+            dial = _dial(body)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": f"bad GOD dial: {exc}"}), 400
+        job = _start_job(f"tool:{name}", {"args": body.get("args", {}), "brutality": dial,
+                                          "heads": int(body.get("heads") or 0),
                                           "headless": bool(body.get("headless", False))})
         return jsonify({"ok": True, "job": job})
 
@@ -299,9 +317,11 @@ def _run_job(app, job_id: str, kind: str, payload: dict) -> None:
         cfg = load_config(app.config["TB_CONFIG"])
         brut = payload.get("brutality") or 0
         if brut:
-            from ..god.signals import title_for_level
-            cfg.brute.level = int(brut)
-            log.info("GOD dial set: %s", title_for_level(cfg.brute.level))
+            from ..god.algebra import parse_level
+            from ..god.apotheosis import apotheosis_title
+
+            cfg.brute.level = parse_level(brut)
+            log.info("GOD dial set: %s", apotheosis_title(cfg.brute.level))
         heads = payload.get("heads") or 0
         if heads:
             cfg.brute.hydra_heads = max(0, min(3, int(heads)))

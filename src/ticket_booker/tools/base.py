@@ -34,6 +34,7 @@ from typing import Any, Callable
 from ..browser import launch_browser
 from ..captcha.manager import AutoCaptcha
 from ..god.diagnostics import save_bundle
+from ..god.genome import Genome
 from ..god.journal import Journal
 from ..god.memory import SelectorMemory
 from ..god.pacer import Pacer
@@ -104,6 +105,12 @@ def run_with_browser(cfg, headless: bool | None, fn: Callable, *args, **kwargs):
     proxy rotation). Lower levels run a single session.
     """
     level = int(getattr(getattr(cfg, "brute", None), "level", 3) or 3)
+    brute_cfg = getattr(cfg, "brute", None)
+    arm_at = str(getattr(brute_cfg, "arm_at", "") or "").strip()
+    if arm_at:
+        from ..god.chronos import arm_until
+
+        arm_until(arm_at, lead=float(getattr(brute_cfg, "arm_lead_seconds", 5) or 0))
     if level >= 4:
         from ..god.engine import god_run
         from ..god.hydra import heads_for, hydra_race
@@ -140,6 +147,14 @@ class BruteContext:
         self._relogins_this_run = 0
         self.tier = tier_of(self.brutality)
         self.pacer = Pacer() if self.tier >= 6 else None
+        self.genome: Genome | None = None
+        if self.tier >= 7:
+            try:
+                self.genome = Genome(str(Path(mem_file).with_name("genome.json")))
+                log.info("🧬 GENOME online - %d strategy DNA strands, best: %s",
+                         len(self.genome.stats), self.genome.best() or "none yet")
+            except Exception as exc:
+                log.debug("genome disabled: %s", exc)
         try:
             _mins = int(getattr(brute, "max_tool_minutes", 0) or 0)
         except (TypeError, ValueError):
@@ -212,13 +227,21 @@ class BruteContext:
         if self.tier >= 6 and len(ordered) > 2 and random.random() < 0.2:
             head, tail = ordered[:1], ordered[1:]
             random.shuffle(tail)  # radioactive mutation: escape local minima
-            return head + tail
+            ordered = head + tail
+        if self.genome is not None and len(ordered) > 1 and random.random() < 0.4:
+            pick = self.genome.choose([sid for sid, _ in ordered])
+            ordered.sort(key=lambda s: 0 if s[0] == pick else 1)  # stable, keeps mutation
         return ordered
 
     def _record_win(self, key: str, sid: str) -> None:
         if self.memory:
             try:
                 self.memory.record(key, sid)
+            except Exception:
+                pass
+        if self.genome is not None:
+            try:
+                self.genome.record(sid, 1.0)  # strategy DNA learns who won
             except Exception:
                 pass
 

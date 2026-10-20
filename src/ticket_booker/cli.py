@@ -12,13 +12,24 @@ from . import __version__
 from .utils import setup_logging
 
 
+def _brutality_arg(raw: str) -> int:
+    """argparse type: accept 4 or 'god of god of god of god' or 'god^god'."""
+    from .god.algebra import BruteAlgebraError, parse_level
+
+    try:
+        return parse_level(raw)
+    except BruteAlgebraError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 def _add_common(sp, config_required: bool = True):
     if config_required:
         sp.add_argument("--config", "-c", default="config.json", help="Config file (json/yaml). Default: config.json")
     sp.add_argument("--headless", action="store_true", help="Run browser headless (uses virtual display on servers).")
     sp.add_argument("--headed", action="store_true", help="Force visible browser (overrides config).")
-    sp.add_argument("--brutality", type=int, default=None,
-                    help="GOD dial 1-5, 6-9 OMEGA, 10+ RADIOACTIVE (max 9223372036854775807).")
+    sp.add_argument("--brutality", type=_brutality_arg, default=None,
+                    help="GOD dial: 1-5 BRUTE, 6-9 OMEGA, 10+ RADIOACTIVE, or an "
+                         "EXPRESSION like 'god of god of god of god' (max INT64).")
     sp.add_argument("-v", "--verbose", action="store_true")
 
 
@@ -74,6 +85,11 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("preflight", help="Pre-flight checks before race day.")
     s.add_argument("--config", "-c", default="config.json")
     s.add_argument("-v", "--verbose", action="store_true")
+
+    s = sub.add_parser("ascend", help="Evaluate a BRUTE ALGEBRA expression and ascend the dial.")
+    s.add_argument("expression", nargs="?", default="god of god of god of god",
+                   help="e.g. 'god of god of god of god' (default), 'god^god', "
+                        "'ultimate brute god', or 9223372036854775807.")
 
     s = sub.add_parser("webui", help="Launch the easy WebUI dashboard (auto-opens in Chrome).")
     s.add_argument("--port", type=int, default=8765, help="Port (default 8765, auto-bumps if busy).")
@@ -197,8 +213,8 @@ def cmd_doctor(args) -> int:
             check(f"config {args.config}", False, str(exc)[:220])
 
     try:
+        from .god.apotheosis import apotheosis_title
         from .god.session_vault import vault_status
-        from .god.signals import title_for_level
         mem_keys, lvl = 0, None
         _mp = Path("./profiles/selector_memory.json")
         if _mp.exists():
@@ -212,7 +228,7 @@ def cmd_doctor(args) -> int:
                 lvl = _lc(args.config).brute.level
             except Exception:
                 lvl = None
-        print(f"GOD: level={lvl} ({title_for_level(lvl) if lvl else 'no config'}) | "
+        print(f"GOD: level={lvl} ({apotheosis_title(lvl) if lvl else 'no config'}) | "
               f"memory_keys={mem_keys} | vault={vault_status().get('count', 0)} cookies")
     except Exception as exc:
         print(f"GOD: status unavailable ({exc})")
@@ -359,6 +375,42 @@ def cmd_preflight(args) -> int:
     return 0 if res.ok else 1
 
 
+def cmd_ascend(args) -> int:
+    from .god.algebra import BruteAlgebraError
+    from .god.apotheosis import report
+
+    try:
+        r = report(args.expression)
+    except BruteAlgebraError as exc:
+        print(f"BRUTE ALGEBRA ERROR: {exc}")
+        return 2
+    print("APOTHEOSIS - TOO MUCH BRUTE")
+    print("-" * 60)
+    print(f"expression : {r['expression']}")
+    print(f"dial       : {r['level_text']}" + ("  (INT64 MAX)" if r["at_max"] else ""))
+    print(f"tier       : {r['tier']}")
+    print(f"title      : {r['title']}")
+    print(f"depth      : {r['god_depth']} OF THE layers "
+          f"({r['repeat_count']}x ULTIMATE BRUTE GOD)")
+    print(f"warcry     : {r['warcry']}")
+    try:
+        from .god.genome import Genome
+
+        s = Genome("./profiles/genome.json").summary()
+        if s["plays"]:
+            board = ", ".join(f"{x['arm']} {x['wins']}/{x['plays']}"
+                              for x in s["leaderboard"])
+            print(f"genome     : {board}")
+        else:
+            print("genome     : fresh (no strategy DNA yet)")
+    except Exception:
+        pass
+    print("-" * 60)
+    print(("VERDICT: THE DIAL IS MAXED - " if r["at_max"] else "VERDICT: ")
+          + r["title"])
+    return 0
+
+
 def cmd_webui(args) -> int:
     from .webui.launcher import serve
 
@@ -383,5 +435,6 @@ def main(argv=None) -> None:
         "webui": cmd_webui,
         "chaos": cmd_chaos,
         "preflight": cmd_preflight,
+        "ascend": cmd_ascend,
     }[args.command](args)
     sys.exit(code or 0)
