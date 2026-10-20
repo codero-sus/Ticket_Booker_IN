@@ -15,11 +15,14 @@ login (auto captcha) → search → Tatkal countdown race → passengers → UPI
 - **Zero-touch captcha engine** (`src/ticket_booker/captcha/`):
   1. **Local OCR** (Tesseract + IRCTC-tuned preprocessing: denoise, Otsu/adaptive
      threshold, morphology) — free, offline, no API key.
-  2. **Buster-style reCAPTCHA solver** — auto-clicks the checkbox; if challenged,
-     switches to the **audio challenge**, downloads + transcribes it automatically.
-     No button to press, no touch needed.
-  3. **Paid fallback** — 2Captcha / AntiCaptcha image-to-text API.
-  4. **Manual assist** — last resort: solve once in the open browser, bot continues.
+  2. **Buster bridge (reCAPTCHA)** — runs the real Buster extension and clicks
+     its in-widget icon (`#solver-button`), then **PLAY**. If the extension is
+     not installed, it performs the identical click path itself. Zero touch.
+  3. **Gemini** — on-device **Gemini Nano** (Chrome Prompt API, in-browser,
+     no key) repairs shaky OCR readings; **Gemini vision** reads the image
+     directly when `GEMINI_API_KEY` is set. Both vote for consensus.
+  4. **Paid fallback** — 2Captcha / AntiCaptcha image-to-text API.
+  5. **Manual assist** — last resort: solve once in the open browser, bot continues.
 - **Tatkal race mode** — NTP clock sync, precise 10:00 (AC) / 11:00 (Non-AC) countdown,
   availability refresh loop, instant Book-Now.
 - **Safe payments** — bot never touches card/netbanking/OTP secrets. UPI tab + UPI ID
@@ -149,6 +152,17 @@ ticket-booker ascend "ultimate brute god"   # 9,223,372,036,854,775,807
   "mode": "auto",
   "max_attempts": 6,
   "ocr":        { "enabled": true,  "psm_modes": [7, 8], "min_confidence": 25.0, "max_variants": 6 },
+  "gemini": {
+    "enabled": true, "mode": "auto", "model": "gemini-2.5-flash",
+    "api_key": "", "repair_ocr": true, "max_variants": 2,
+    "cache": "./profiles/captcha_cache.json"
+  },
+  "buster": {
+    "enabled": true, "mode": "auto",
+    "extension_path": "./profiles/buster/buster.xpi",
+    "auto_load_extension": true, "timeout": 60.0,
+    "max_attempts": 3, "solve_checkbox": true, "language": "en"
+  },
   "recaptcha_audio": { "enabled": true, "language": "en", "max_audio_attempts": 3 },
   "service":    { "enabled": false, "provider": "twocaptcha", "api_key": "", "poll_timeout": 120 },
   "on_failure": "manual",
@@ -158,6 +172,10 @@ ticket-booker ascend "ultimate brute god"   # 9,223,372,036,854,775,807
 
 - `mode`: `auto` (zero-touch) · `manual` (always ask human) · `assist` (reserved).
 - `service`: enable + set key (or `$CAPTCHA_API_KEY`) for 2Captcha/AntiCaptcha fallback.
+- `gemini.api_key`: empty = **Nano only** (runs inside the page, no key, offline).
+  Set `$GEMINI_API_KEY` to add cloud vision reads; answers are voted.
+- `buster.mode`: `auto` (icon if installed, else emulated) · `extension` (require
+  the real addon) · `native` (never load the addon).
 - `on_failure: manual` + headed browser → bot pauses, you solve once, it continues.
   Set `"error"` for fully unattended runs (cron/VPS).
 - Every captcha attempt is saved under `debug_dir` for tuning.
@@ -230,8 +248,10 @@ src/ticket_booker/
   captcha/
     manager.py           AutoCaptcha solver chain
     ocr_solver.py        local Tesseract OCR (zero-touch text captchas)
+    gemini_solver.py     Gemini Nano (on-device) + Gemini vision captcha solver
+    buster.py            Buster bridge: click #solver-button, then PLAY
     preprocess.py        IRCTC-tuned image cleaning (OpenCV/PIL)
-    recaptcha_solver.py  Buster-style audio solver (zero-touch reCAPTCHA)
+    recaptcha_solver.py  audio transcription pipeline (used by the bridge)
     service_solver.py    2Captcha / AntiCaptcha fallback
   irctc/
     constants.py         ALL selectors + label maps (edit here when IRCTC changes)
@@ -395,6 +415,87 @@ ticket-booker tool live --train 12430 -c config.json --brutality infinity
 > The saturating API is unchanged: `evaluate()` and `parse_level()` still clamp
 > at INT64_MAX. Only `evaluate_raw()` / `parse_level_raw()` break the ceiling,
 > and only the dial paths use them.
+
+## 🧠 Gemini captcha (Nano on-device + cloud vision)
+
+Two transports, one solver (`captcha.gemini`):
+
+- **Gemini Nano** — Chrome's built-in Prompt API (`LanguageModel`), driven
+  *through the booking page*. Free, offline, no key, no extra process. Nano is
+  a strong OCR **repair** engine: Tesseract mangles `0/O`, `1/l/I`, `5/S`,
+  `8/B`, `2/Z`; Nano fixes them. Repairs are cached in
+  `./profiles/captcha_cache.json`, so the same noise is only asked once.
+- **Gemini vision** — set `GEMINI_API_KEY` (or `captcha.gemini.api_key`) and the
+  model reads the captcha image directly. Multiple preprocessing variants are
+  requested and their answers are **voted** (majority wins, confidence breaks
+  ties).
+
+```bash
+export GEMINI_API_KEY=...          # optional; Nano works without it
+ticket-booker solve-captcha captcha.png     # prints {text, confidence, solver}
+```
+
+`mode`: `auto` (both) · `api` (cloud only) · `nano` (on-device only).
+When a low-confidence OCR reading comes back (< 60), Nano gets one repair pass
+before the booking flow retries — that is the difference between a wasted
+Tatkal attempt and a login.
+
+## 🎯 Buster bridge — click the icon, then PLAY
+
+reCAPTCHA is not solved by guessing. We drive **Buster**
+([dessant/buster](https://github.com/dessant/buster)) — the same extension you
+would click by hand — and reproduce its exact click path.
+
+Buster's content script runs *inside* the reCAPTCHA challenge frame and injects
+one button. That button is the "icon":
+
+```
+#solver-button                            <- the orange Buster icon (in bframe)
+.rc-audiochallenge-play-button > button   <- PLAY
+audio#audio-source                        <- the MP3 the challenge serves
+#audio-response                           <- where the transcript is typed
+#recaptcha-verify-button                  <- submit
+```
+
+So the gestures map to real selectors:
+
+| You do this | The bot does this |
+|---|---|
+| click the Buster icon | `frame.locator("#solver-button").click()` |
+| click **PLAY** | `frame.locator(".rc-audiochallenge-play-button > button").click()` |
+| type what you hear | fills `#audio-response` from speech-to-text |
+| press Verify | clicks `#recaptcha-verify-button` |
+
+### Install the real extension (recommended)
+
+```bash
+ticket-booker buster --install      # fetches the signed .xpi from addons.mozilla.org
+ticket-booker buster --status       # is it on disk? which mode? which selectors?
+```
+
+`--install` saves to `./profiles/buster/buster.xpi`, which is git-ignored. Once
+the file exists, `load_config()` automatically appends it to
+`browser.addons`, so Camoufox loads it on the next launch — no other step.
+
+### No extension? It still works
+
+With `mode: "auto"` (default) the bot checks for `#solver-button` inside the
+challenge frame. If the extension is present it clicks the **icon** and lets
+Buster do the solving. If not, it runs the identical sequence itself: switch to
+audio → click **PLAY** → download `audio#audio-source` → transcribe → fill →
+verify. Same clicks, no addon required.
+
+```bash
+ticket-booker buster --try "https://recaptcha-demo.appspot.com/recaptcha-v2-checkbox.php"
+ticket-booker buster --try "https://..." --native    # force the no-addon path
+```
+
+`preflight` reports both: a loaded `.xpi`, or the native fallback (a warning,
+not a failure — bookings still run).
+
+> **Why this is zero-touch:** the icon and PLAY are ordinary DOM elements, so
+> the bot clicks them programmatically. There is nothing for you to press.
+> `buster.mode: "extension"` is the only setting that *requires* the addon.
 
 ## 🛠️ Troubleshooting
 

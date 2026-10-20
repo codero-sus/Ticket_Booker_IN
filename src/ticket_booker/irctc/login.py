@@ -151,10 +151,29 @@ def login(
     if not auth.username or not auth.password:
         raise ValueError("IRCTC username/password missing (config or IRCTC_USER/IRCTC_PASS).")
 
+    # Gemini Nano lives inside this page - hand it over before the captcha loop.
+    attach = getattr(captcha, "attach_page", None)
+    if attach is not None:
+        try:
+            attach(page)
+        except Exception as exc:  # pragma: no cover - defensive
+            log.debug("captcha page attach skipped: %s", exc)
+
     page.goto(C.HOME_URL, wait_until="domcontentloaded")
     human_delay(1.0, 2.0)
     dismiss_popups(page)
-    solve_recaptcha_if_present(page)  # harmless no-op when absent
+    # Buster bridge: clicks the icon, then PLAY. No-op when there is no
+    # reCAPTCHA, and falls back to the legacy audio solver internally.
+    try:
+        solver = getattr(captcha, "solve_recaptcha", None)
+        if solver is not None:
+            res = solver(page)
+            if not getattr(res, "solved", True):
+                log.warning("reCAPTCHA not solved: %s", getattr(res, "message", ""))
+        else:
+            solve_recaptcha_if_present(page)
+    except Exception as exc:  # never fatal during a booking race
+        log.debug("reCAPTCHA pre-check skipped: %s", exc)
 
     if is_logged_in(page):
         log.info("Already logged in (reused saved session).")

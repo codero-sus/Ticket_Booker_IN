@@ -132,6 +132,11 @@ class BruteContext:
         self.page = page
         self.headless = headless
         self.captcha = AutoCaptcha(cfg.captcha)
+        if page is not None:
+            try:
+                self.captcha.attach_page(page)
+            except Exception as exc:  # pragma: no cover - defensive
+                log.debug("captcha page attach skipped: %s", exc)
         self.reports_dir = ensure_dir("./reports")
         self.shots_dir = ensure_dir("./screenshots/tools")
         self.diag_dir = ensure_dir("./diagnostics")
@@ -697,14 +702,10 @@ class BruteContext:
                 log.warning("Captcha found but no input box — stopping.")
                 break
         try:
-            from ..captcha.recaptcha_solver import solve_recaptcha_if_present
-
-            if self.cfg.captcha.recaptcha_audio.enabled:
-                solve_recaptcha_if_present(
-                    self.page,
-                    language=self.cfg.captcha.recaptcha_audio.language,
-                    max_audio_attempts=self.cfg.captcha.recaptcha_audio.max_audio_attempts,
-                )
+            if self.cfg.captcha.recaptcha_audio.enabled or getattr(
+                getattr(self.cfg.captcha, "buster", None), "enabled", False
+            ):
+                self.captcha.solve_recaptcha(self.page)
         except Exception as exc:
             log.debug("recaptcha check skipped: %s", exc)
         return solved

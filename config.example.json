@@ -63,12 +63,15 @@
     "addons": []
   },
   "captcha": {
-    "_comment": "Zero-touch chain: local OCR -> paid service. reCAPTCHA audio auto-solve is built in for gateways.",
+    "_comment": "Zero-touch chain: Buster bridge (icon -> PLAY) for reCAPTCHA, Gemini (Nano on-device + cloud vision) and local OCR for text captchas, then the paid service. Run `ticket-booker buster --install` to fetch the extension.",
     "mode": "auto",
     "max_attempts": 6,
     "ocr": {
       "enabled": true,
-      "psm_modes": [7, 8],
+      "psm_modes": [
+        7,
+        8
+      ],
       "min_confidence": 25.0,
       "max_variants": 6
     },
@@ -84,7 +87,29 @@
       "poll_timeout": 120
     },
     "on_failure": "manual",
-    "debug_dir": "./screenshots/captcha"
+    "debug_dir": "./screenshots/captcha",
+    "gemini": {
+      "enabled": true,
+      "api_key": "",
+      "model": "gemini-2.5-flash",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta",
+      "mode": "auto",
+      "timeout": 25.0,
+      "max_variants": 2,
+      "repair_ocr": true,
+      "temperature": 0.0,
+      "cache": "./profiles/captcha_cache.json"
+    },
+    "buster": {
+      "enabled": true,
+      "mode": "auto",
+      "extension_path": "./profiles/buster/buster.xpi",
+      "auto_load_extension": true,
+      "timeout": 60.0,
+      "max_attempts": 3,
+      "solve_checkbox": true,
+      "language": "en"
+    }
   },
   "brute": {
     "_comment": "GOD dial: 1-5 BRUTE, 6-9 OMEGA, 10+ RADIOACTIVE, or EXPRESSION 'god of god of god of god' (INT64 max).",
