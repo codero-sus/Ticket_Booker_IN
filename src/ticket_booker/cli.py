@@ -14,10 +14,10 @@ from .utils import setup_logging
 
 def _brutality_arg(raw: str) -> int:
     """argparse type: accept 4 or 'god of god of god of god' or 'god^god'."""
-    from .god.algebra import BruteAlgebraError, parse_level
+    from .god.algebra import BruteAlgebraError, parse_level_raw
 
     try:
-        return parse_level(raw)
+        return parse_level_raw(raw)
     except BruteAlgebraError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from exc
 

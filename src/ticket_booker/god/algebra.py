@@ -1,13 +1,13 @@
 """BRUTE ALGEBRA — arithmetic for gods who find 9,223,372,036,854,775,807 too small.
 
-The GOD dial used to be a number. Now it is an *expression*::
+The GOD dial used to be a number. Now it is an expression::
 
     god of god of god of god
     ultimate brute god
     god ^ god
-    too much brute
-    9223372036854775807
-    (god of god) * god!
+    infinity
+    void
+    singularity
     brute!
 
 Grammar (right-associative powers, like every self-respecting god)::
@@ -18,17 +18,27 @@ Grammar (right-associative powers, like every self-respecting god)::
     postfix := primary '!'*
     primary := NUMBER | CONSTANT | '(' expr ')'
 
-Everything saturates at INT64_MAX — gods do not wrap around, they top out.
+Two modes:
+
+* :func:`evaluate` / :func:`parse_level` — SATURATING. Clamps at INT64_MAX.
+  The old ceiling. Safe, predictable, never overflows.
+* :func:`evaluate_raw` / :func:`parse_level_raw` — UNBOUNDED. Pure Python big
+  ints, NO ceiling. Cross INT64_MAX and you enter the INFINITE BRUTE VOID.
+
 100% pure/offline/unit-tested; no browser, no clock, no side effects.
 """
 
 from __future__ import annotations
 
+import math
 import re
 
 INT64_MAX = 9223372036854775807
+VOID_THRESHOLD = INT64_MAX + 1  # first level that is "beyond" the ceiling
 
 MAX_EXPR_LEN = 240
+POW_DIGIT_CAP = 10_000_000  # refuse to materialize powers with > this many digits
+FACT_CAP = 100_000          # factorial beyond this is a stand-in for infinity
 
 # Words that mean something brutally large.
 CONSTANTS: dict[str, int] = {
@@ -41,12 +51,18 @@ CONSTANTS: dict[str, int] = {
     "radioactive": INT64_MAX,
     "apotheosis": INT64_MAX,
     "max": INT64_MAX,
-    "infinity": INT64_MAX,
-    "inf": INT64_MAX,
+    # beyond the ceiling -> the VOID
+    "void": VOID_THRESHOLD,
+    "singularity": 2 ** 256,
+    "infinity": 10 ** 100,
+    "inf": 10 ** 100,
+    "∞": 10 ** 100,
+    "beyond": 2 ** 512,
+    "eternal brute": 10 ** 1000,
+    "omnipotent": 2 ** 1024,
     "too much brute": INT64_MAX,
 }
 
-# The warcry that evaluates to the entire dial.
 DEFAULT_BRUTALITY = "god of god of god of god"
 
 _NUM_RE = re.compile(r"\d[\d,_]*")
@@ -58,7 +74,7 @@ class BruteAlgebraError(ValueError):
 
 
 # --------------------------------------------------------------------------- #
-# saturating math
+# saturating math (stays at or below INT64_MAX)
 # --------------------------------------------------------------------------- #
 
 def sat_add(a: int, b: int) -> int:
@@ -83,7 +99,7 @@ def sat_pow(base: int, exponent: int) -> int:
     if exponent == 1:
         return min(base, INT64_MAX)
     if base >= 2 and exponent >= 63:
-        return INT64_MAX  # 2**63 already exceeds int64
+        return INT64_MAX
     result = 1
     for _ in range(exponent):
         result = sat_mul(result, base)
@@ -97,15 +113,53 @@ def sat_fact(n: int) -> int:
     if n <= 1:
         return 1
     if n > 20:
-        return INT64_MAX  # 21! overflows int64
+        return INT64_MAX
     result = 1
     for i in range(2, n + 1):
         result = sat_mul(result, i)
     return result
 
 
-def is_saturated(value: int) -> bool:
-    return int(value) >= INT64_MAX
+# --------------------------------------------------------------------------- #
+# raw (unbounded) math — Python big ints, NO ceiling
+# --------------------------------------------------------------------------- #
+
+def raw_add(a: int, b: int) -> int:
+    return int(a) + int(b)
+
+
+def raw_mul(a: int, b: int) -> int:
+    return int(a) * int(b)
+
+
+def raw_pow(base: int, exponent: int) -> int:
+    base, exponent = int(base), int(exponent)
+    if exponent == 0:
+        return 1
+    if base in (0, 1):
+        return base
+    if exponent < 0:
+        return 1
+    # refuse to materialize numbers with more than POW_DIGIT_CAP digits
+    if base > 1 and exponent > 0:
+        try:
+            digits = exponent * math.log10(base) + 1
+        except OverflowError:
+            return 10 ** POW_DIGIT_CAP  # exponent too huge for float: infinity
+        if digits > POW_DIGIT_CAP:
+            return 10 ** POW_DIGIT_CAP  # stand-in for infinity
+    return base ** exponent
+
+
+def raw_fact(n: int) -> int:
+    n = int(n)
+    if n <= 1:
+        return 1
+    if n < 0:
+        n = 0
+    if n > FACT_CAP:
+        return 10 ** (POW_DIGIT_CAP // 10)  # stand-in for infinity
+    return math.factorial(n)
 
 
 # --------------------------------------------------------------------------- #
@@ -195,9 +249,16 @@ def _tokenize(expr: str) -> list[tuple[str, object]]:
 # --------------------------------------------------------------------------- #
 
 class _Parser:
-    def __init__(self, tokens: list[tuple[str, object]]) -> None:
+    def __init__(
+        self, tokens: list[tuple[str, object]], saturate: bool = True
+    ) -> None:
         self.tokens = tokens
         self.pos = 0
+        self.saturate = saturate
+        self.add = sat_add if saturate else raw_add
+        self.mul = sat_mul if saturate else raw_mul
+        self.pow = sat_pow if saturate else raw_pow
+        self.fact = sat_fact if saturate else raw_fact
 
     def _peek(self) -> tuple[str, object] | None:
         return self.tokens[self.pos] if self.pos < len(self.tokens) else None
@@ -214,7 +275,10 @@ class _Parser:
         value = self._expr()
         if self.pos != len(self.tokens):
             raise BruteAlgebraError(f"trailing garbage: {self.tokens[self.pos:]!r}")
-        return max(1, min(INT64_MAX, int(value)))
+        value = max(1, int(value))
+        if self.saturate:
+            value = min(value, INT64_MAX)
+        return value
 
     def _expr(self) -> int:
         left = self._term()
@@ -222,7 +286,7 @@ class _Parser:
         if tok is not None and tok[0] == "op" and tok[1] in ("of", "^"):
             self._take()
             right = self._expr()  # right-associative: god^(god^god)
-            return sat_pow(left, right)
+            return self.pow(left, right)
         return left
 
     def _term(self) -> int:
@@ -231,7 +295,7 @@ class _Parser:
             tok = self._peek()
             if tok is not None and tok[0] == "op" and tok[1] == "*":
                 self._take()
-                left = sat_mul(left, self._unary())
+                left = self.mul(left, self._unary())
                 continue
             return left
 
@@ -250,7 +314,7 @@ class _Parser:
             tok = self._peek()
             if tok is not None and tok[0] == "op" and tok[1] == "!":
                 self._take()
-                value = sat_fact(value)
+                value = self.fact(value)
                 continue
             return value
 
@@ -261,7 +325,8 @@ class _Parser:
         kind, value = tok
         if kind == "num":
             self._take()
-            return min(INT64_MAX, int(value))
+            v = int(value)
+            return min(v, INT64_MAX) if self.saturate else v
         if kind == "op" and value == "(":
             self._take()
             inner = self._expr()
@@ -274,31 +339,41 @@ class _Parser:
 
 
 # --------------------------------------------------------------------------- #
-# public API
+# public API — saturating (default, backward compatible)
 # --------------------------------------------------------------------------- #
 
-def evaluate(expr) -> int:
-    """Evaluate a brute expression to an int (1..INT64_MAX), saturating."""
+def evaluate(expr, saturate: bool = True) -> int:
+    """Evaluate a brute expression to an int (1..INT64_MAX when saturating)."""
     if isinstance(expr, bool):
         return max(1, min(INT64_MAX, int(expr)))
     if isinstance(expr, int):
-        return max(1, min(INT64_MAX, expr))
-    try:
-        tokens = _tokenize(str(expr))
-    except BruteAlgebraError:
-        raise
-    except Exception as exc:  # never leak random exceptions to CLI/WebUI
-        raise BruteAlgebraError(str(exc)) from exc
-    return _Parser(tokens).parse()
+        return max(1, min(INT64_MAX, expr)) if saturate else max(1, expr)
+    tokens = _tokenize(str(expr))
+    return _Parser(tokens, saturate=saturate).parse()
+
+
+def evaluate_raw(expr) -> int:
+    """Evaluate a brute expression to an UNBOUNDED Python big int. No ceiling."""
+    return evaluate(expr, saturate=False)
 
 
 def parse_level(raw, fallback: int | None = None) -> int:
-    """Parse a CLI/WebUI/JSON level. With `fallback`, never raise."""
+    """Parse a CLI/WebUI/JSON level (saturating). With `fallback`, never raise."""
     try:
         return evaluate(raw)
     except BruteAlgebraError:
         if fallback is not None:
             return max(1, min(INT64_MAX, int(fallback)))
+        raise
+
+
+def parse_level_raw(raw, fallback: int | None = None) -> int:
+    """Parse a level UNBOUNDED (can enter the VOID). With `fallback`, never raise."""
+    try:
+        return evaluate_raw(raw)
+    except BruteAlgebraError:
+        if fallback is not None:
+            return max(1, int(fallback))
         raise
 
 
@@ -308,11 +383,25 @@ def try_parse_level(raw, fallback: int = 4) -> int:
 
 
 def format_level(level: int) -> str:
-    return f"{int(level):,}"
+    n = int(level)
+    try:
+        return f"{n:,}"
+    except ValueError:
+        # more digits than Python's str limit (~4300): symbolic infinity
+        return "∞"
+
+
+def is_void(level) -> bool:
+    """True if the level has broken the INT64 ceiling into the VOID."""
+    try:
+        return int(level) > INT64_MAX
+    except (TypeError, ValueError):
+        return False
 
 
 __all__ = [
     "INT64_MAX",
+    "VOID_THRESHOLD",
     "DEFAULT_BRUTALITY",
     "CONSTANTS",
     "BruteAlgebraError",
@@ -320,9 +409,15 @@ __all__ = [
     "sat_mul",
     "sat_pow",
     "sat_fact",
-    "is_saturated",
+    "raw_add",
+    "raw_mul",
+    "raw_pow",
+    "raw_fact",
+    "is_void",
     "evaluate",
+    "evaluate_raw",
     "parse_level",
+    "parse_level_raw",
     "try_parse_level",
     "format_level",
 ]

@@ -45,6 +45,7 @@ BROWSER_DEATH_RE = re.compile(
 
 
 INT64_MAX = 9223372036854775807  # RADIOACTIVE LVL
+from .algebra import VOID_THRESHOLD
 
 
 def tier_of(level) -> int:
@@ -57,7 +58,9 @@ def tier_of(level) -> int:
         return max(1, level)
     if level <= 9:
         return 6
-    return 7
+    if level <= INT64_MAX:
+        return 7
+    return 8  # VOID
 
 
 def title_for_level(level) -> str:
@@ -70,6 +73,8 @@ def title_for_level(level) -> str:
         return titles[level]
     if level <= 9:
         return f"OMEGA GOD^{level - 4}"
+    if level >= VOID_THRESHOLD:
+        return f"INFINITE BRUTE VOID LVL {level:,}"
     if level >= INT64_MAX:
         return "RADIOACTIVE LVL 9223372036854775807"
     return f"RADIOACTIVE LVL {level}"

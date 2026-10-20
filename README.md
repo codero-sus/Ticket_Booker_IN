@@ -264,7 +264,8 @@ Every tool runs on the GOD engine (`src/ticket_booker/god/` + `tools/base.py`):
 | 5 ULTIMATE | + max retries, screenshot every step, proxy rotation, no mercy. |
 | 6-9 OMEGA | + HYDRA 2 heads racing, radioactive mutation, adaptive pacer, verified clicks. |
 | 10+ RADIOACTIVE | + HYDRA 3 heads, captcha rotation ensemble, cookie vault, doomsday budget, GENOME. Max: 9223372036854775807. |
-| any expression | BRUTE ALGEBRA: `god of god of god of god`, `god^god`, `brute!` — saturates at INT64 max. |
+| > INT64_MAX VOID | + immortal retries, no doomsday, no pacer, omni-captcha (all solvers parallel), uncapped HYDRA, screenshot every step. NO MERCY. |
+| any expression | BRUTE ALGEBRA: `god of god of god of god`, `god^god`, `brute!`, `void`, `infinity` — breaks INT64 into the VOID. |
 
 Set it four ways: config `"brute": {"level": 9223372036854775807}`, CLI `--brutality 7`
 or `--brutality "god of god of god of god"` (+`--heads 3`) on
@@ -310,6 +311,8 @@ The dial no longer accepts "a number". It accepts **BRUTE ALGEBRA**:
 ```bash
 ticket-booker ascend                             # god of god of god of god -> INT64 MAX
 ticket-booker ascend "god^god"                   # same dial, shorter warcry
+ticket-booker ascend "void"                      # INFINITE BRUTE VOID LVL 9,223,372,036,854,775,808
+ticket-booker ascend "infinity"                  # INFINITE BRUTE VOID LVL 10^100
 ticket-booker ascend "ultimate brute god"        # 9,223,372,036,854,775,807
 ticket-booker book -c config.json --brutality "god of god of god of god"
 ticket-booker tool live --train 12430 -c config.json --brutality "brute god!"

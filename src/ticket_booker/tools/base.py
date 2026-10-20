@@ -35,6 +35,7 @@ from ..browser import launch_browser
 from ..captcha.manager import AutoCaptcha
 from ..god.diagnostics import save_bundle
 from ..god.genome import Genome
+from ..god.infinite import is_void, void_behavior
 from ..god.journal import Journal
 from ..god.memory import SelectorMemory
 from ..god.pacer import Pacer
@@ -146,7 +147,8 @@ class BruteContext:
         self._same_captcha_count = 0
         self._relogins_this_run = 0
         self.tier = tier_of(self.brutality)
-        self.pacer = Pacer() if self.tier >= 6 else None
+        self.void = is_void(self.brutality)
+        self.pacer = None if self.void else (Pacer() if self.tier >= 6 else None)
         self.genome: Genome | None = None
         if self.tier >= 7:
             try:
@@ -159,7 +161,11 @@ class BruteContext:
             _mins = int(getattr(brute, "max_tool_minutes", 0) or 0)
         except (TypeError, ValueError):
             _mins = 0
-        self._deadline = time.time() + _mins * 60 if _mins > 0 else None
+        self._deadline = (
+            None
+            if self.void
+            else (time.time() + _mins * 60 if _mins > 0 else None)
+        )
         log.info("⚡ BRUTE GOD engine engaged (level %s: %s)",
                  self.brutality, title_for_level(self.brutality))
 
@@ -745,11 +751,17 @@ class BruteContext:
             floor = max(floor, 7)
         if self.tier >= 7:
             floor = max(floor, 9)
+        if self.void:
+            floor = max(floor, 50)  # VOID: uncapped immortal ladder
         retries = max(int(retries), floor)
         last: Exception | None = None
         relogged = False
         for attempt in range(1, retries + 1):
-            if self._deadline and time.time() > self._deadline:
+            if (
+                not self.void
+                and self._deadline
+                and time.time() > self._deadline
+            ):
                 raise TimeoutError(f"DOOMSDAY: exceeded max_tool_minutes budget during '{what}'")
             try:
                 if attempt > 1:
