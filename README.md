@@ -353,6 +353,49 @@ God powers added at this level:
 - **Nine-deep title** - one extra `OF THE ULTIMATE BRUTE GOD` per digit of
   dial (capped at nine gods) so the log line matches the level.
 
+## 🌌 MORE BRUTE - INFINITE BRUTE VOID (GOD7)
+
+GOD6 had a ceiling: `9,223,372,036,854,775,807`. GOD7 does not.
+
+Cross INT64_MAX and the dial keeps going - into the **VOID**. The algebra now
+has two modes: the classic saturating one (clamps at INT64_MAX) and a **raw,
+unbounded** one (Python big ints, no ceiling at all). `--brutality`, the WebUI
+GOD dial, and `ascend` all use the raw dial, so these are real levels:
+
+```bash
+ticket-booker ascend "void"          # INFINITE BRUTE VOID LVL 9,223,372,036,854,775,808
+ticket-booker ascend "infinity"      # INFINITE BRUTE VOID LVL 10^100
+ticket-booker ascend "singularity"   # INFINITE BRUTE VOID LVL 2^256
+ticket-booker ascend                 # god^god^god^god -> tips past the ceiling
+```
+
+New constants: `void`, `singularity`, `infinity` / `inf`, `beyond`,
+`omnipotent`, `eternal brute`. When a number is too big to even print
+(more than ~4300 digits), it renders as `∞` instead of crashing.
+
+What VOID mode actually changes at runtime:
+
+- **Immortal retries** - the brute ladder floor jumps to 50 and never gives up.
+- **No doomsday** - `max_tool_minutes` is ignored entirely; the run does not
+  abort on a timer.
+- **No pacer** - the adaptive brake is removed. Maximum velocity.
+- **Omni-captcha** - *every* configured solver (OCR, audio, paid services)
+  fires **in parallel**; the first non-empty answer wins and the rest are
+  cancelled. Zero-touch, zero waiting for a doomed solver to time out.
+- **Screenshot every step** - full black-box evidence of the run.
+- **Uncapped HYDRA** - beyond 3 heads.
+- **`preflight`** reports `brute.void` as a green check so you know what you
+  armed before race day.
+
+```bash
+ticket-booker book -c config.json --brutality "void"
+ticket-booker tool live --train 12430 -c config.json --brutality infinity
+```
+
+> The saturating API is unchanged: `evaluate()` and `parse_level()` still clamp
+> at INT64_MAX. Only `evaluate_raw()` / `parse_level_raw()` break the ceiling,
+> and only the dial paths use them.
+
 ## 🛠️ Troubleshooting
 
 | Symptom | Fix |
