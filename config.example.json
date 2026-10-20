@@ -87,13 +87,15 @@
     "debug_dir": "./screenshots/captcha"
   },
   "brute": {
-    "_comment": "GOD dial 1-5, 6-9 OMEGA, 10+ RADIOACTIVE (max 9223372036854775807).",
+    "_comment": "GOD dial: 1-5 BRUTE, 6-9 OMEGA, 10+ RADIOACTIVE, or EXPRESSION 'god of god of god of god' (INT64 max).",
     "level": 4,
     "hydra_heads": 0,
     "max_tool_minutes": 25,
     "memory_file": "./profiles/selector_memory.json",
     "diagnostics": true,
     "keepalive_checks": true,
+    "arm_at": "",
+    "arm_lead_seconds": 5,
     "proxy_list": []
   }
 }

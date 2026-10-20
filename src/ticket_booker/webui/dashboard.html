@@ -74,7 +74,8 @@
         <option value="4" selected>4 GOD</option>
         <option value="5">5 ULTIMATE</option>
         <option value="7">7 OMEGA</option>
-        <option value="9223372036854775807">RADIOACTIVE</option>
+        <option value="9223372036854775807">RADIOACTIVE (INT64)</option>
+        <option value="god of god of god of god">APOTHEOSIS (infinitely brute)</option>
       </select>
     </label>
     <label>hydra heads <input id="heads" type="number" value="0" min="0" max="3" style="width:52px" title="0=auto"></label>
@@ -153,7 +154,7 @@
 const $ = id => document.getElementById(id);
 const val = id => $(id).value.trim();
 const headless = () => $('headless').checked;
-const brut = () => parseInt((($('brutality')||{}).value) || '4');
+const brut = () => (($('brutality')||{}).value) || '4';
 
 async function api(path, opts={}) {
   const r = await fetch(path, opts);

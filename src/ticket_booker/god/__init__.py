@@ -12,10 +12,32 @@ Brutality levels (config `brute.level`, CLI `--brutality`, WebUI selector):
   3 BRUTE — + selector memory, fuzzy fallback, diagnostics.
   4 GOD (default) — + block detection, session keepalive, browser-relaunch ladder.
   5 ULTIMATE GOD — + max retries, screenshot every step, proxy rotation, no mercy.
+  6-9 OMEGA — + HYDRA heads, adaptive pacer, cookie vault, ensemble captcha.
+  10+ RADIOACTIVE — + verified clicks, strategy mutation, doomsday budget.
+  APOTHEOSIS — BRUTE ALGEBRA levels (god of god of god of god = INT64_MAX),
+                GENOME strategy DNA, CHRONOS warbell, `ascend` command.
 """
 
 from .diagnostics import redact_config, redact_text, save_bundle
+from .algebra import (
+    DEFAULT_BRUTALITY,
+    INT64_MAX,
+    BruteAlgebraError,
+    evaluate as evaluate_brutality,
+    parse_level,
+    try_parse_level,
+)
+from .apotheosis import (
+    apotheosis_title,
+    god_depth,
+    level_from,
+    report as apotheosis_report,
+    tier_name,
+    warcry,
+)
 from .chaos import DrillResult, run_drills
+from .chronos import ChronosError, arm_until, parse_hhmm, seconds_until
+from .genome import DEFAULT_ARMS, Genome
 from .engine import god_run
 from .journal import Journal
 from .preflight import PreflightResult, preflight
@@ -60,4 +82,22 @@ __all__ = [
     "redact_config",
     "redact_text",
     "save_bundle",
+    "INT64_MAX",
+    "DEFAULT_BRUTALITY",
+    "BruteAlgebraError",
+    "evaluate_brutality",
+    "parse_level",
+    "try_parse_level",
+    "apotheosis_title",
+    "apotheosis_report",
+    "god_depth",
+    "level_from",
+    "tier_name",
+    "warcry",
+    "ChronosError",
+    "arm_until",
+    "parse_hhmm",
+    "seconds_until",
+    "DEFAULT_ARMS",
+    "Genome",
 ]

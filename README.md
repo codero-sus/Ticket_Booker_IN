@@ -124,6 +124,9 @@ ticket-booker tool live --train 12430 [--station CNB] -c config.json
 ticket-booker webui                        # --port 8765 --no-open to skip Chrome
 ticket-booker preflight -c config.json     # find booking-killers BEFORE race day
 ticket-booker chaos                        # offline disaster drills (prove GOD survives)
+ticket-booker ascend                       # BRUTE ALGEBRA: god of god of god of god
+ticket-booker ascend "god^god"              # same dial, shorter warcry
+ticket-booker ascend "ultimate brute god"   # 9,223,372,036,854,775,807
 ```
 
 ## ⚙️ Configuration (`config.json`)
@@ -260,10 +263,13 @@ Every tool runs on the GOD engine (`src/ticket_booker/god/` + `tools/base.py`):
 | 4 GOD (default) | + block/ban detection, session keepalive, fresh-browser relaunch ladder. |
 | 5 ULTIMATE | + max retries, screenshot every step, proxy rotation, no mercy. |
 | 6-9 OMEGA | + HYDRA 2 heads racing, radioactive mutation, adaptive pacer, verified clicks. |
-| 10+ RADIOACTIVE | + HYDRA 3 heads, captcha rotation ensemble, cookie vault, doomsday budget. Max: 9223372036854775807. |
+| 10+ RADIOACTIVE | + HYDRA 3 heads, captcha rotation ensemble, cookie vault, doomsday budget, GENOME. Max: 9223372036854775807. |
+| any expression | BRUTE ALGEBRA: `god of god of god of god`, `god^god`, `brute!` — saturates at INT64 max. |
 
-Set it three ways: config `"brute": {"level": 9223372036854775807}`, CLI `--brutality 7` (+`--heads 3`)
-(`book`/`tatkal`/`tool`/`login`/`search`), or the WebUI GOD-dial selector.
+Set it four ways: config `"brute": {"level": 9223372036854775807}`, CLI `--brutality 7`
+or `--brutality "god of god of god of god"` (+`--heads 3`) on
+`book`/`tatkal`/`tool`/`login`/`search`, the WebUI GOD-dial selector, or
+`ticket-booker ascend <expression>` to preview any expression.
 
 God powers:
 - **Self-healing selectors** — `SelectorMemory` (`./profiles/selector_memory.json`)
@@ -296,6 +302,53 @@ God powers:
   solvers, binaries: FAIL = do not fly.
 - **CHAOS drills** (`ticket-booker chaos`) - scripted flaky actions, browser death,
   block walls, session rot, doomsday: GOD SURVIVES.
+
+## APOTHEOSIS - TOO MUCH BRUTE (GOD6)
+
+The dial no longer accepts "a number". It accepts **BRUTE ALGEBRA**:
+
+```bash
+ticket-booker ascend                             # god of god of god of god -> INT64 MAX
+ticket-booker ascend "god^god"                   # same dial, shorter warcry
+ticket-booker ascend "ultimate brute god"        # 9,223,372,036,854,775,807
+ticket-booker book -c config.json --brutality "god of god of god of god"
+ticket-booker tool live --train 12430 -c config.json --brutality "brute god!"
+```
+
+Grammar: `of` is exponentiation (right-associative), `*` multiplies, `!` is
+factorial, `^` / `**` are powers, and words are constants:
+
+| Word | Value |
+|---|---|
+| `brute` | 5 |
+| `god` | 1,000,000 |
+| `omega` | 999,999,999 |
+| `brute god` | 10^9 |
+| `ultimate god` | 10^12 |
+| `ultimate brute god` / `radioactive` / `apotheosis` / `max` / `infinity` | 9,223,372,036,854,775,807 |
+
+Everything saturates at int64 max - no wraparound, no overflow, no mercy.
+The `--brutality` flag accepts these expressions everywhere (the WebUI sends
+the same string; a typo returns HTTP 400 instead of killing the dashboard).
+At the top the title stops being a name and starts being a genealogy:
+
+```
+THE ULTIMATE BRUTE GOD OF THE ULTIMATE BRUTE GOD OF THE ULTIMATE BRUTE GOD
+OF THE ULTIMATE BRUTE GOD OF ... - RADIOACTIVE LVL 9,223,372,036,854,775,807
+```
+
+God powers added at this level:
+
+- **GENOME** (`./profiles/genome.json`) - a persistent UCB1 bandit over nine
+  locator strategies (text/xpath/css/label/placeholder/aria/role/js/keyboard).
+  Untried strategies are explored first, winners are promoted across runs, old
+  wins decay. `ascend` prints the leaderboard; `doctor` shows the champion.
+- **CHRONOS WARBELL** - set `"brute": {"arm_at": "09:59:55",
+  "arm_lead_seconds": 5}` and the process itself becomes the alarm clock:
+  it sleeps in Ctrl-C-friendly chunks until 5 seconds before Tatkal, then
+  launches the browser. `preflight` validates the time before race day.
+- **Nine-deep title** - one extra `OF THE ULTIMATE BRUTE GOD` per digit of
+  dial (capped at nine gods) so the log line matches the level.
 
 ## 🛠️ Troubleshooting
 

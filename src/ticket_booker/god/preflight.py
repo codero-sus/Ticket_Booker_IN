@@ -82,6 +82,15 @@ def preflight(cfg, today=None) -> PreflightResult:
         checks.append(_c("captcha.solvers", bool(ocr_ok or svc_ok),
                          f"ocr={'yes' if ocr_ok else 'no'}, service={'yes' if svc_ok else 'no'}",
                          level="warn"))
+    arm_at = str(getattr(getattr(cfg, "brute", None), "arm_at", "") or "").strip()
+    if arm_at:
+        try:
+            from .chronos import parse_hhmm
+
+            h, m, s = parse_hhmm(arm_at)
+            checks.append(_c("arm.warbell", True, f"armed for {h:02d}:{m:02d}:{s:02d}"))
+        except Exception as exc:
+            checks.append(_c("arm.warbell", False, f"bad arm_at: {exc}"))
     try:
         from camoufox.pkgman import installed_verstr
 
