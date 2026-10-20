@@ -4,5 +4,5 @@ Automates IRCTC (and planned RailOne) ticket booking using the Camoufox
 stealth browser, with a zero-touch automatic captcha solver.
 """
 
-__version__ = "0.7.0"
+__version__ = "0.9.0"
 __all__ = ["__version__"]

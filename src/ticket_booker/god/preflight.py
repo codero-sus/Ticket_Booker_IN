@@ -81,9 +81,41 @@ def preflight(cfg, today=None) -> PreflightResult:
     else:
         ocr_ok = cfg.captcha.ocr.enabled and bool(shutil.which("tesseract"))
         svc_ok = cfg.captcha.service.enabled and bool((cfg.captcha.service.api_key or "").strip())
-        checks.append(_c("captcha.solvers", bool(ocr_ok or svc_ok),
-                         f"ocr={'yes' if ocr_ok else 'no'}, service={'yes' if svc_ok else 'no'}",
+        gem_cfg = getattr(cfg.captcha, "gemini", None)
+        gem_key = bool(((getattr(gem_cfg, "api_key", "") or "").strip()))
+        gem_on = bool(getattr(gem_cfg, "enabled", False))
+        gem_ok = gem_on and (gem_key or getattr(gem_cfg, "mode", "auto") in ("auto", "nano"))
+        if gem_ok:
+            gem_txt = "api+nano" if gem_key else "nano (in-browser)"
+        else:
+            gem_txt = "off"
+        checks.append(_c("captcha.solvers", bool(ocr_ok or svc_ok or gem_ok),
+                         f"gemini={gem_txt}, ocr={'yes' if ocr_ok else 'no'}, "
+                         f"service={'yes' if svc_ok else 'no'}",
                          level="warn"))
+
+    # Buster bridge: icon -> PLAY. Missing .xpi is fine (native path still works).
+    b_cfg = getattr(cfg.captcha, "buster", None)
+    if b_cfg is not None and getattr(b_cfg, "enabled", False):
+        from pathlib import Path as _P
+
+        _xpi = _P(getattr(b_cfg, "extension_path", "") or "")
+        _has_xpi = bool(str(_xpi) and _xpi.exists())
+        _mode = getattr(b_cfg, "mode", "auto")
+        if _has_xpi:
+            checks.append(_c("captcha.buster", True,
+                             f"extension loaded ({_xpi.name}), mode={_mode}: "
+                             "icon #solver-button -> PLAY"))
+        elif _mode == "extension":
+            checks.append(_c("captcha.buster", False,
+                             f"mode=extension but {_xpi} is missing - run "
+                             "`ticket-booker buster --install`"))
+        else:
+            checks.append(_c("captcha.buster", True,
+                             f"mode={_mode}: native icon->PLAY path (no .xpi; "
+                             "`ticket-booker buster --install` for the real one)",
+                             level="warn"))
+
     arm_at = str(getattr(getattr(cfg, "brute", None), "arm_at", "") or "").strip()
     if arm_at:
         try:

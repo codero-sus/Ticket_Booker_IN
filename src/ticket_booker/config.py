@@ -177,10 +177,40 @@ class CaptchaServiceCfg(BaseModel):
     poll_timeout: int = Field(120, ge=10, le=300)
 
 
+class GeminiCfg(BaseModel):
+    """Gemini captcha settings: on-device Nano and/or cloud vision."""
+
+    enabled: bool = True
+    api_key: str = ""  # or GEMINI_API_KEY env (empty = Nano only)
+    model: str = "gemini-2.5-flash"
+    base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    mode: Literal["auto", "api", "nano"] = "auto"
+    timeout: float = Field(25.0, ge=3.0, le=120.0)
+    max_variants: int = Field(2, ge=1, le=6)
+    repair_ocr: bool = True
+    temperature: float = Field(0.0, ge=0.0, le=1.0)
+    cache: str = "./profiles/captcha_cache.json"
+
+
+class BusterCfg(BaseModel):
+    """Buster extension bridge: click the icon, then PLAY."""
+
+    enabled: bool = True
+    mode: Literal["auto", "extension", "native"] = "auto"
+    extension_path: str = "./profiles/buster/buster.xpi"
+    auto_load_extension: bool = True
+    timeout: float = Field(60.0, ge=5.0, le=300.0)
+    max_attempts: int = Field(3, ge=1, le=10)
+    solve_checkbox: bool = True
+    language: str = "en"
+
+
 class CaptchaCfg(BaseModel):
     mode: Literal["auto", "manual", "assist"] = "auto"
     max_attempts: int = Field(6, ge=1, le=15)
     ocr: OcrCfg = OcrCfg()
+    gemini: GeminiCfg = GeminiCfg()
+    buster: BusterCfg = BusterCfg()
     recaptcha_audio: RecaptchaAudioCfg = RecaptchaAudioCfg()
     service: CaptchaServiceCfg = CaptchaServiceCfg()
     on_failure: Literal["manual", "error"] = "manual"
@@ -254,6 +284,7 @@ def load_config(path: str | Path) -> AppConfig:
         ("preferences", "mobile"): "IRCTC_MOBILE",
         ("payment", "upi_id"): "IRCTC_UPI",
         ("captcha", "service", "api_key"): "CAPTCHA_API_KEY",
+        ("captcha", "gemini", "api_key"): "GEMINI_API_KEY",
     }
     for keys, env in env_map.items():
         val = os.environ.get(env)
@@ -266,6 +297,23 @@ def load_config(path: str | Path) -> AppConfig:
 
     data.pop("_comment", None)
     cfg = AppConfig.model_validate(data)
+
+    # If Buster's .xpi is on disk, make sure the browser actually loads it.
+    if cfg.captcha.buster.enabled and cfg.captcha.buster.auto_load_extension:
+        from pathlib import Path as _Path
+
+        _xpi = _Path(cfg.captcha.buster.extension_path)
+        if _xpi.exists():
+            _xs = str(_xpi)
+            if _xs not in cfg.browser.addons:
+                cfg.browser.addons.append(_xs)
+                log.info("Buster extension queued for the browser: %s", _xs)
+        elif cfg.captcha.buster.mode == "extension":
+            log.warning(
+                "Buster mode=extension but %s is missing - run "
+                "`ticket-booker buster --install`. Falling back to native.",
+                _xpi,
+            )
 
     if cfg.tatkal.enabled and len(cfg.passengers) > 4:
         log.warning("Tatkal allows max 4 passengers per PNR; you have %d.", len(cfg.passengers))

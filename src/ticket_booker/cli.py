@@ -91,6 +91,21 @@ def build_parser() -> argparse.ArgumentParser:
                    help="e.g. 'god of god of god of god' (default), 'god^god', "
                         "'ultimate brute god', or 9223372036854775807.")
 
+    s = sub.add_parser(
+        "buster",
+        help="Buster bridge: install the extension, or click icon + PLAY on a URL.",
+    )
+    s.add_argument("--install", action="store_true",
+                   help="Download Buster's signed .xpi from addons.mozilla.org.")
+    s.add_argument("--status", action="store_true",
+                   help="Show bridge status (extension on disk, mode, selectors).")
+    s.add_argument("--try", dest="try_url", metavar="URL", default="",
+                   help="Open URL, click the Buster icon then PLAY.")
+    s.add_argument("--native", action="store_true",
+                   help="Force the no-extension path (icon-click emulation).")
+    s.add_argument("--config", "-c", default="config.json")
+    s.add_argument("-v", "--verbose", action="store_true")
+
     s = sub.add_parser("webui", help="Launch the easy WebUI dashboard (auto-opens in Chrome).")
     s.add_argument("--port", type=int, default=8765, help="Port (default 8765, auto-bumps if busy).")
     s.add_argument("--host", default="127.0.0.1", help="Bind host (default 127.0.0.1).")
@@ -209,6 +224,19 @@ def cmd_doctor(args) -> int:
             for s in ac.solvers:
                 solvers.append(f"{s.name}:{'ready' if s.available() else 'missing'}")
             print(f"       captcha solvers: {', '.join(solvers) or 'none (manual mode)'}")
+            gcfg = getattr(cfg.captcha, "gemini", None)
+            if gcfg is not None and getattr(gcfg, "enabled", False):
+                g_key = "key set" if (gcfg.api_key or "").strip() else "no key"
+                g_nano = "on-device (attached at launch)" if gcfg.mode in ("auto", "nano") else "off"
+                print(f"       gemini: model={gcfg.model} api={g_key} "
+                      f"nano={g_nano} repair_ocr={gcfg.repair_ocr}")
+            bcfg = getattr(cfg.captcha, "buster", None)
+            if bcfg is not None:
+                from .captcha.buster import extension_installed as _ext_ok
+
+                print(f"       buster: mode={bcfg.mode} "
+                      f"extension={'installed' if _ext_ok(bcfg) else 'native only'} "
+                      f"(icon #solver-button -> PLAY)")
         except Exception as exc:
             check(f"config {args.config}", False, str(exc)[:220])
 
@@ -259,6 +287,85 @@ def cmd_solve_captcha(args) -> int:
     res = ac.solve_text_image(img_path.read_bytes())
     print(json.dumps({"text": res.text, "confidence": round(res.confidence, 1), "solver": res.solver}))
     return 0 if res.ok else 1
+
+
+def cmd_buster(args) -> int:
+    """Install / inspect / fire the Buster bridge."""
+    from .captcha.buster import (
+        AMO_XPI_URL,
+        BusterSolver,
+        buster_xpi_path,
+        download_extension,
+        extension_installed,
+    )
+    from .config import load_config
+
+    cfg = None
+    try:
+        cfg = load_config(args.config)
+    except Exception as exc:
+        if args.try_url:
+            print(f"cannot open a browser without a valid config: {exc}")
+            return 2
+        from .config import BusterCfg
+
+        print(f"note: {args.config} not usable ({exc}); showing defaults", file=sys.stderr)
+
+    bcfg = cfg.captcha.buster if cfg is not None else BusterCfg()
+    xpi = buster_xpi_path(bcfg)
+
+    if args.install:
+        print(f"Downloading Buster extension from {AMO_XPI_URL}")
+        try:
+            path = download_extension(xpi)
+        except Exception as exc:
+            print(f"FAILED: {exc}")
+            print("Manual option: download the .xpi in your browser and save it to")
+            print(f"  {xpi}")
+            return 1
+        print(f"OK: {path} ({path.stat().st_size:,} bytes)")
+        print('It will be loaded automatically on the next run (browser.addons).')
+        return 0
+
+    if args.try_url:
+        from .browser import launch_browser
+
+        if not args.native and not extension_installed(bcfg):
+            print(f"No extension at {xpi} - running the native path.")
+            print("Run `ticket-booker buster --install` for the real extension.")
+        solver = BusterSolver(
+            mode="native" if args.native else bcfg.mode,
+            timeout=bcfg.timeout,
+            max_attempts=bcfg.max_attempts,
+            solve_checkbox=bcfg.solve_checkbox,
+            language=bcfg.language,
+        )
+        with launch_browser(cfg.browser, cfg.browser.headless) as session:
+            page = session.page
+            page.goto(args.try_url, wait_until="domcontentloaded")
+            solver.set_page(page)
+            print(json.dumps(solver.status(), indent=2))
+            print("Clicking the Buster icon (or emulating it)...")
+            result = solver.solve(page)
+            print(json.dumps(result.__dict__, indent=2))
+            return 0 if result.solved else 1
+
+    print(json.dumps(_buster_info(bcfg), indent=2))
+    return 0
+
+
+def _buster_info(bcfg) -> dict:
+    """The status dict `buster --status` prints."""
+    from .captcha.buster import PLAY_SELECTOR, buster_xpi_path, extension_installed
+
+    return {
+        "enabled": bcfg.enabled,
+        "mode": bcfg.mode,
+        "extension_path": str(buster_xpi_path(bcfg)),
+        "extension_installed": extension_installed(bcfg),
+        "icon_selector": "#solver-button",
+        "play_selector": PLAY_SELECTOR,
+    }
 
 
 def _load_cfg(args):
@@ -436,5 +543,6 @@ def main(argv=None) -> None:
         "chaos": cmd_chaos,
         "preflight": cmd_preflight,
         "ascend": cmd_ascend,
+        "buster": cmd_buster,
     }[args.command](args)
     sys.exit(code or 0)

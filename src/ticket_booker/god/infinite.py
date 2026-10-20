@@ -57,12 +57,23 @@ class OmniSolver:
     """
 
     def __init__(self, solvers: list, timeout: float = 20.0) -> None:
-        self.solvers = [s for s in solvers if getattr(s, "available", lambda: False)()]
+        self.solvers = list(solvers)
         self.timeout = timeout
+
+    def live(self) -> list:
+        """Solvers available RIGHT NOW (page-attached ones come online late)."""
+        out = []
+        for solver in self.solvers:
+            try:
+                if solver.available():
+                    out.append(solver)
+            except Exception:
+                continue
+        return out
 
     def solve_text_image(self, image_bytes: bytes, fallback=None):
         """Run every solver concurrently. Return the first non-empty OK result."""
-        solvers = self.solvers
+        solvers = self.live()
         if not solvers:
             return fallback(image_bytes) if fallback else None
 
